@@ -1,0 +1,1 @@
+- [2026-04-13T09:20:00+07:00] Updated env.example configuration sample
