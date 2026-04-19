@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-e2ee_app}
+      POSTGRES_USER: ${POSTGRES_USER:-e2ee_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-e2ee_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - communication-network
+  api-service:
+    image: node:20-alpine
+    container_name: api-service
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./api-service:/app
+      - api_node_modules:/app/node_modules
+    env_file:
+      - ./api-service/.env
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - communication-network
+  realtime-service:
+    image: node:20-alpine
+    container_name: realtime-service
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./realtime-service:/app
+      - realtime_node_modules:/app/node_modules
+    env_file:
+      - ./realtime-service/.env
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - communication-network
+  frontend-dev:
+    profiles: ["dev"]
+    image: node:20-alpine
+    container_name: frontend-dev
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    env_file:
+      - ./frontend/.env
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-service
+      - realtime-service
+    networks:
+      - communication-network
+  nginx:
+    profiles: ["prod"]
+    image: nginx:1.27-alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - api-service
+      - realtime-service
+    networks:
+      - communication-network
+volumes:
+  postgres_data:
+  api_node_modules:
+  realtime_node_modules:
+  frontend_node_modules:
+networks:
+  communication-network:
+    driver: bridge
