@@ -172,7 +172,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Regex email hiện tại loại bỏ whitespace, bao gồm newline/tab.
 - OTP email được gửi bằng `nodemailer`; `from` lấy từ cấu hình SMTP, `subject` là hằng số, nội dung email chỉ chứa OTP do server sinh.
 
-### Chống tiêm nhiễm Header
 
 ### Chống tiêm nhiễm Command
 
