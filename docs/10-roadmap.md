@@ -1,14 +1,36 @@
-# 10 - Lộ Trình 8 Tuần (Chi Tiết Theo Task)
+# 10 - Roadmap Thực Thi (Theo Owner)
 
 ## Mục tiêu
 
-Tài liệu này là backlog thực thi chi tiết để theo dõi tiến độ theo tuần, theo người và theo task.
+Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên, dùng trực tiếp để theo dõi tiến độ hằng tuần.
 
 ---
 
-## Quy ước chung để theo dõi
+## Quy ước theo dõi tiến độ
 
-### Ánh xạ Owner theo thành viên
+### Trạng thái
+
+- `Todo`: chưa bắt đầu.
+- `In Progress`: đang thực hiện.
+- `Blocked`: đang bị chặn.
+- `In Review`: đã tạo PR/chờ review.
+- `Done`: hoàn thành đủ DoD trong `09-team-raci.md`.
+
+### Mức ước lượng
+
+- `XS`: <= 2 giờ.
+- `S`: 0.5 ngày.
+- `M`: 1 ngày.
+- `L`: 2 ngày.
+- `XL`: > 2 ngày.
+
+### Cột deadline
+
+- Cột `Deadline (tự điền)` để trống, System Owner tự quyết theo tuần thực tế.
+
+---
+
+## Ánh xạ Owner
 
 | Owner | Người phụ trách |
 |---|---|
@@ -19,289 +41,152 @@ Tài liệu này là backlog thực thi chi tiết để theo dõi tiến độ 
 
 ---
 
-### Mã task
+## Mốc kiểm soát 8 tuần (khung)
 
-- Định dạng: `W<tuan>-<domain>-<so>`
-- Domain:
-  - `SYS`: điều phối, kiến trúc, devops (System Owner)
-  - `API`: backend API + DB
-  - `RT`: realtime/signaling
-  - `FE`: frontend/client
-  - `QA`: kiểm thử tích hợp
-
-### Trạng thái
-
-- `Todo`
-- `In Progress`
-- `Blocked`
-- `In Review`
-- `Done`
-
----
-
-## Mẫu bảng cập nhật tiến độ mỗi tuần
-
-| Task ID | Mô tả | Owner | Ước lượng | Phụ thuộc | Deadline | Trạng thái | PR/Bằng chứng |
-|---|---|---|---|---|---|---|---|
-| W3-API-01 | Endpoint request OTP | API Owner | 0.5 ngày | W2-API-02 | Thứ 3 | Todo |  |
-| W3-FE-02 | Màn OTP + countdown | FE Owner | 0.5 ngày | W3-API-01 | Thứ 4 | Todo |  |
-
----
-
-## Tuần 1 - Nền tảng và khung tài liệu
-
-### Mục tiêu tuần
-
-- Có skeleton kỹ thuật 3 service.
-- Có bộ docs nền tảng để khóa contract tuần 2.
-
-### Backlog tuần 1
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W1-SYS-01 | Chốt glossary thuật ngữ (conversation, receipt, keyVersion, callType, requestId) | System Owner | 0.5 ngày | Không | Thứ 2 | Mục glossary trong docs |
-| W1-SYS-02 | Chốt chuẩn tên file tài liệu và thứ tự đọc | System Owner | 0.5 ngày | W1-SYS-01 | Thứ 2 | Danh mục docs |
-| W1-API-01 | Tạo skeleton API service + cấu trúc module auth/users/conversations/messages | API Owner | 1 ngày | Không | Thứ 3 | Cấu trúc thư mục + chạy được local |
-| W1-API-02 | Tạo migration baseline cho PostgreSQL (users, conversations, conversation_members, messages, receipts) | API Owner | 1 ngày | W1-API-01 | Thứ 4 | Migration đầu tiên |
-| W1-RT-01 | Tạo skeleton realtime service (socket init, namespace, middleware auth) | Realtime Owner | 1 ngày | Không | Thứ 3 | Realtime chạy local |
-| W1-RT-02 | Tạo base event map (chat/call/key/presence/system) | Realtime Owner | 0.5 ngày | W1-RT-01 | Thứ 4 | Danh sách event |
-| W1-FE-01 | Tạo skeleton FE app + route auth/chat | FE Owner | 1 ngày | Không | Thứ 3 | FE chạy local |
-| W1-FE-02 | Tạo store cơ bản auth/socket/chat (typed) | FE Owner | 0.5 ngày | W1-FE-01 | Thứ 4 | Store file + types |
-| W1-SYS-03 | Review chéo skeleton và chốt blocker tuần 1 | System Owner | 0.5 ngày | Toàn bộ task tuần 1 | Thứ 6 | Biên bản review |
-
-### Điều kiện hoàn thành tuần 1
-
-- Tất cả service chạy local.
-- Docs `01`, `02`, `03`, `04`, `06`, `09` có draft.
-
----
-
-## Tuần 2 - Đóng băng contract V1
-
-### Mục tiêu tuần
-
-- Khóa API contract và event contract.
-- Không cho phép thay đổi breaking sau khi freeze.
-
-### Backlog tuần 2
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W2-SYS-01 | Tổ chức buổi contract freeze (API + Events) | System Owner | 0.5 ngày | W1-SYS-03 | Thứ 2 | Biên bản freeze |
-| W2-API-01 | Hoàn tất schema request/response auth + OTP | API Owner | 0.5 ngày | W1-API-02 | Thứ 2 | Mục auth trong `02-api.md` |
-| W2-API-02 | Hoàn tất schema users search + conversations + messages | API Owner | 1 ngày | W2-API-01 | Thứ 3 | Mục endpoint đầy đủ |
-| W2-RT-01 | Hoàn tất payload `chat:*`, `presence:*`, `system:*` | Realtime Owner | 1 ngày | W1-RT-02 | Thứ 3 | Mục events tương ứng |
-| W2-RT-02 | Hoàn tất payload `key:*`, `call:*` + error codes | Realtime Owner | 1 ngày | W2-RT-01 | Thứ 4 | `03-events.md` hoàn chỉnh |
-| W2-FE-01 | Sinh type model từ contract API | FE Owner | 0.5 ngày | W2-API-02 | Thứ 4 | File types FE |
-| W2-FE-02 | Sinh type model từ contract events | FE Owner | 0.5 ngày | W2-RT-02 | Thứ 4 | File types FE |
-| W2-SYS-02 | Chốt version contract `v1` và cấm breaking change | System Owner | 0.5 ngày | W2-API-02, W2-RT-02 | Thứ 5 | Decision log |
-| W2-QA-01 | Review đầy đủ mismatch contract giữa 3 bên | System Owner + 3 Owner | 0.5 ngày | Toàn bộ task tuần 2 | Thứ 6 | Checklist contract pass |
-
-### Điều kiện hoàn thành tuần 2
-
-- `02-api.md` và `03-events.md` ở trạng thái ổn định.
-- Tất cả owner ký xác nhận freeze.
-
----
-
-## Tuần 3 - Auth, OTP, tìm người dùng, tạo conversation
-
-### Mục tiêu tuần
-
-- Hoàn thành onboarding user: đăng ký, OTP, đăng nhập, tìm user và bắt đầu chat.
-
-### Backlog tuần 3
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W3-API-01 | Implement `POST /auth/register/request-otp` | API Owner | 0.5 ngày | W2-API-01 | Thứ 2 | Endpoint + test |
-| W3-API-02 | Implement `POST /auth/register/verify-otp` | API Owner | 0.5 ngày | W3-API-01 | Thứ 2 | Endpoint + test |
-| W3-API-03 | Implement `POST /auth/login` + `POST /auth/refresh` | API Owner | 1 ngày | W3-API-02 | Thứ 3 | Endpoint + test |
-| W3-API-04 | Implement `GET /users/search` (username/email) + rate limit | API Owner | 1 ngày | W3-API-03 | Thứ 4 | Endpoint + test |
-| W3-API-05 | Implement `POST /conversations/direct` | API Owner | 0.5 ngày | W3-API-04 | Thứ 4 | Endpoint + test |
-| W3-FE-01 | Màn đăng ký + request OTP | FE Owner | 0.5 ngày | W3-API-01 | Thứ 2 | UI + gọi API |
-| W3-FE-02 | Màn verify OTP + resend cooldown | FE Owner | 0.5 ngày | W3-API-02 | Thứ 3 | UI + state handling |
-| W3-FE-03 | Màn login + refresh token flow cơ bản | FE Owner | 1 ngày | W3-API-03 | Thứ 3 | UI + store cập nhật |
-| W3-FE-04 | UI tìm user theo `@username` và email | FE Owner | 0.5 ngày | W3-API-04 | Thứ 4 | UI + gọi API |
-| W3-FE-05 | UI tạo conversation direct | FE Owner | 0.5 ngày | W3-API-05 | Thứ 4 | UI + chuyển chat |
-| W3-RT-01 | Socket auth middleware theo access token | Realtime Owner | 0.5 ngày | W3-API-03 | Thứ 3 | Middleware chạy |
-| W3-RT-02 | Implement `presence:subscribe` và `presence:update` | Realtime Owner | 1 ngày | W3-RT-01 | Thứ 4 | Event chạy test |
-| W3-SYS-01 | Review security: OTP attempts, cooldown, token TTL | System Owner | 0.5 ngày | W3-API-03 | Thứ 5 | Security checklist |
-| W3-QA-01 | E2E: register -> verify -> login -> search -> create conversation | System Owner + FE/API | 0.5 ngày | Toàn bộ tuần 3 | Thứ 6 | Biên bản test |
-
-### Điều kiện hoàn thành tuần 3
-
-- Luồng onboarding hoạt động đầy đủ trên staging.
-
----
-
-## Tuần 4 - Chat E2EE cơ bản
-
-### Mục tiêu tuần
-
-- Gửi/nhận tin mã hóa, lưu ciphertext vào DB, có ack/error và retry.
-
-### Backlog tuần 4
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W4-API-01 | Implement `POST /internal/messages/persist` + dedupe | API Owner | 1 ngày | W2-API-02 | Thứ 2 | Endpoint + test |
-| W4-API-02 | Implement `GET /conversations/{id}/messages` (pagination) | API Owner | 0.5 ngày | W4-API-01 | Thứ 3 | Endpoint + test |
-| W4-API-03 | Implement receipt endpoint delivered/read | API Owner | 0.5 ngày | W4-API-01 | Thứ 3 | Endpoint + test |
-| W4-RT-01 | Implement `chat:send` -> gọi API internal persist | Realtime Owner | 1 ngày | W4-API-01 | Thứ 3 | Event chạy ổn định |
-| W4-RT-02 | Implement `system:ack` / `system:error` chuẩn | Realtime Owner | 0.5 ngày | W4-RT-01 | Thứ 3 | Event phản hồi chuẩn |
-| W4-RT-03 | Implement `chat:message` fanout + dedupe map | Realtime Owner | 0.5 ngày | W4-RT-01 | Thứ 4 | Event fanout |
-| W4-FE-01 | Implement mã hóa AES-GCM envelope trước khi gửi | FE Owner | 1 ngày | W2-FE-02 | Thứ 3 | Luồng gửi mã hóa |
-| W4-FE-02 | Implement giải mã khi nhận `chat:message` | FE Owner | 1 ngày | W4-FE-01 | Thứ 4 | Luồng nhận giải mã |
-| W4-FE-03 | Implement queue retry theo `requestId` | FE Owner | 0.5 ngày | W4-RT-02 | Thứ 4 | Retry hoạt động |
-| W4-FE-04 | Hiển thị trạng thái sent/delivered/read | FE Owner | 0.5 ngày | W4-API-03 | Thứ 5 | UI trạng thái |
-| W4-SYS-01 | So khớp code với `04-flow.md` và `03-events.md` | System Owner | 0.5 ngày | Toàn bộ task tuần 4 | Thứ 5 | Báo cáo mismatch |
-| W4-QA-01 | Test duplicate send, reconnect send, persist fail | System Owner + FE/RT/API | 0.5 ngày | Toàn bộ tuần 4 | Thứ 6 | Báo cáo test |
-
-### Điều kiện hoàn thành tuần 4
-
-- Chat E2EE gửi/nhận ổn định, ciphertext được lưu và truy vấn được.
-
----
-
-## Tuần 5 - Vòng đời khóa và khôi phục
-
-### Mục tiêu tuần
-
-- Có key exchange, key rotation hybrid, rekey recovery khi lệch keyVersion.
-
-### Backlog tuần 5
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W5-SYS-01 | Chốt ngưỡng xoay khóa (`N`, `T`) và grace window | System Owner | 0.5 ngày | W4-SYS-01 | Thứ 2 | Decision log |
-| W5-RT-01 | Implement `key:exchange:init` và `key:exchange:response` | Realtime Owner | 1 ngày | W2-RT-02 | Thứ 3 | Event chạy test |
-| W5-RT-02 | Implement `key:rotate` và `key:rekey_required` | Realtime Owner | 1 ngày | W5-RT-01 | Thứ 4 | Event chạy test |
-| W5-FE-01 | Implement state machine key session theo conversation | FE Owner | 1 ngày | W5-RT-01 | Thứ 3 | State hoạt động |
-| W5-FE-02 | Trigger rotate theo count/time | FE Owner | 0.5 ngày | W5-FE-01, W5-SYS-01 | Thứ 4 | Rotate thành công |
-| W5-FE-03 | Xử lý rekey khi mismatch keyVersion | FE Owner | 0.5 ngày | W5-RT-02 | Thứ 4 | Recovery thành công |
-| W5-API-01 | Hỗ trợ query theo `keyVersion` và metadata cần thiết | API Owner | 0.5 ngày | W4-API-02 | Thứ 4 | Endpoint/query |
-| W5-SYS-02 | Duyệt acceptance criteria cho key recovery | System Owner | 0.5 ngày | W5-FE-03, W5-RT-02 | Thứ 5 | Checklist pass |
-| W5-QA-01 | Test rotate do count/time + test rekey recovery | System Owner + FE/RT | 0.5 ngày | Toàn bộ tuần 5 | Thứ 6 | Biên bản test |
-
-### Điều kiện hoàn thành tuần 5
-
-- Rotation và rekey chạy được trên staging với test case rõ ràng.
-
----
-
-## Tuần 6 - Cuộc gọi thoại và video
-
-### Mục tiêu tuần
-
-- Hoàn thiện signaling call 1-1 cho cả voice và video, có timeout và fallback.
-
-### Backlog tuần 6
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W6-RT-01 | Implement `call:start`, `call:incoming`, `call:accept`, `call:reject` | Realtime Owner | 1 ngày | W2-RT-02 | Thứ 2 | Signaling cơ bản |
-| W6-RT-02 | Implement `call:offer`, `call:answer`, `call:ice` | Realtime Owner | 1 ngày | W6-RT-01 | Thứ 3 | Signaling SDP/ICE |
-| W6-RT-03 | Implement `call:end`, timeout và cleanup state | Realtime Owner | 0.5 ngày | W6-RT-02 | Thứ 4 | Cleanup ổn định |
-| W6-FE-01 | UI incoming call + accept/reject | FE Owner | 0.5 ngày | W6-RT-01 | Thứ 3 | UI hoạt động |
-| W6-FE-02 | Voice call screen + mute/unmute | FE Owner | 1 ngày | W6-RT-02 | Thứ 4 | Voice call demo |
-| W6-FE-03 | Video call screen + camera on/off | FE Owner | 1 ngày | W6-RT-02 | Thứ 5 | Video call demo |
-| W6-SYS-01 | Cấu hình TURN và tiêu chí fallback P2P -> relay | System Owner | 0.5 ngày | W6-RT-02 | Thứ 4 | Cấu hình + guideline |
-| W6-API-01 | Endpoint metadata cuộc gọi (tùy chọn cho chẩn đoán) | API Owner | 0.5 ngày | W6-RT-03 | Thứ 5 | Endpoint hoặc bỏ có lý do |
-| W6-QA-01 | Test accept/reject/timeout/reconnect trong call | System Owner + FE/RT | 0.5 ngày | Toàn bộ tuần 6 | Thứ 6 | Báo cáo test |
-
-### Điều kiện hoàn thành tuần 6
-
-- Voice/video call signaling chạy ổn định ở staging.
-
----
-
-## Tuần 7 - CI/CD, deploy và hardening
-
-### Mục tiêu tuần
-
-- Có pipeline CI/CD chạy thật và hệ thống đủ ổn định cho demo.
-
-### Backlog tuần 7
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W7-SYS-01 | Viết workflow CI: lint, typecheck, test, build | System Owner | 1 ngày | Toàn bộ tuần 6 | Thứ 2 | CI chạy pass |
-| W7-SYS-02 | Viết workflow CD staging/prod + smoke test | System Owner | 1 ngày | W7-SYS-01 | Thứ 3 | CD chạy được |
-| W7-SYS-03 | Deploy miễn phí và cấu hình secrets | System Owner | 1 ngày | W7-SYS-02 | Thứ 4 | Staging + prod online |
-| W7-RT-01 | Harden reconnect/resync + heartbeat | Realtime Owner | 1 ngày | W6-RT-03 | Thứ 4 | Kịch bản reconnect pass |
-| W7-API-01 | Fix defect auth/persist từ integration tests | API Owner | 1 ngày | W7-QA-01 | Thứ 5 | Defect list giảm |
-| W7-FE-01 | Harden UX lỗi mạng/token hết hạn/reconnect | FE Owner | 1 ngày | W7-RT-01 | Thứ 5 | UX ổn định |
-| W7-QA-01 | Smoke test full flow trên staging | System Owner + cả nhóm | 0.5 ngày | W7-SYS-03 | Thứ 5 | Checklist smoke |
-| W7-SYS-04 | Chốt runbook demo và rollback | System Owner | 0.5 ngày | W7-QA-01 | Thứ 6 | Runbook hoàn chỉnh |
-
-### Điều kiện hoàn thành tuần 7
-
-- CI/CD pass, staging/prod chạy ổn, smoke test pass.
-
----
-
-## Tuần 8 - Chốt chất lượng và chuẩn bị bảo vệ
-
-### Mục tiêu tuần
-
-- Chốt chất lượng sản phẩm, chốt tài liệu, rehearsal bảo vệ.
-
-### Backlog tuần 8
-
-| Task ID | Mô tả chi tiết | Owner | Ước lượng | Phụ thuộc | Deadline | Output bắt buộc |
-|---|---|---|---|---|---|---|
-| W8-SYS-01 | Chạy inspection vòng cuối toàn bộ docs | System Owner | 0.5 ngày | W7-SYS-04 | Thứ 2 | Biên bản review |
-| W8-ALL-01 | Sửa toàn bộ lỗi P1/P2 còn mở | Cả nhóm | 1.5 ngày | W8-SYS-01 | Thứ 4 | Defect board sạch |
-| W8-ALL-02 | Đồng bộ docs với code thực tế | Cả nhóm | 1 ngày | W8-ALL-01 | Thứ 5 | Docs nhất quán |
-| W8-ALL-03 | Rehearsal bảo vệ: demo + hỏi đáp kiến trúc | Cả nhóm | 0.5 ngày | W8-ALL-02 | Thứ 6 | Script bảo vệ |
-| W8-SYS-02 | Chốt gói nộp cuối và checklist bàn giao | System Owner | 0.5 ngày | W8-ALL-03 | Thứ 6 | Gói nộp hoàn chỉnh |
-
-### Điều kiện hoàn thành tuần 8
-
-- Hệ thống demo ổn định.
-- Tài liệu khớp code.
-- Nhóm sẵn sàng bảo vệ.
-
----
-
-## Checklist vi mô cố định theo từng người (áp dụng mỗi tuần)
-
-### System Owner
-
-| Mục kiểm | Đạt/Không đạt | Ghi chú |
+| Tuần | Mục tiêu kiểm soát | Điều kiện pass |
 |---|---|---|
-| Quyết định kiến trúc mới đã ghi vào docs |  |  |
-| Contract thay đổi đã có phê duyệt đúng quy trình |  |  |
-| Risk log tuần đã cập nhật |  |  |
-| Demo checklist tuần đã chạy |  |  |
+| Tuần 1 | Xong skeleton + docs nền | 3 service chạy local, docs nền có draft |
+| Tuần 2 | Freeze contract V1 | `02-api.md` và `03-events.md` được chốt |
+| Tuần 3 | Auth + OTP + Discovery | User onboarding chạy E2E |
+| Tuần 4 | Chat E2EE cơ bản | Gửi/nhận/lưu ciphertext ổn định |
+| Tuần 5 | Key lifecycle | Rotate + rekey recovery pass test |
+| Tuần 6 | Voice/Video call | Signaling call ổn định trên staging |
+| Tuần 7 | Deploy + CI/CD + hardening | CI/CD pass, smoke test pass |
+| Tuần 8 | Final inspection | Docs khớp code, sẵn sàng bảo vệ |
 
-### FE Owner
+---
 
-| Mục kiểm | Đạt/Không đạt | Ghi chú |
-|---|---|---|
-| Type model FE đồng bộ `02-api.md` và `03-events.md` |  |  |
-| UI có trạng thái loading/error/empty/retry |  |  |
-| Không log plaintext/tokens ở client |  |  |
-| Có bằng chứng test thủ công hoặc tự động |  |  |
+## Bảng công việc chi tiết - System Owner (Đình Tiến)
 
-### API Owner
+| STT | Task ID | Task chi tiết | Phụ thuộc | Ước lượng | Trạng thái | Deadline (tự điền) | Ghi chú |
+|---:|---|---|---|---|---|---|---|
+| 1 | SYS-01 | Chốt glossary và quy ước naming toàn dự án | Không | S | Todo |  |  |
+| 2 | SYS-02 | Chốt rule freeze cho API/Event contract | SYS-01 | S | Todo |  |  |
+| 3 | SYS-03 | Chốt policy socket auth (handshake-only) | SYS-02,API-09,RT-02 | XS | Todo |  | Đồng bộ `03-events.md` |
+| 4 | SYS-04 | Chốt tiêu chuẩn E2EE envelope + replay rule | SYS-02,API-19,RT-14 | S | Todo |  | Đồng bộ `05-e2ee.md` |
+| 5 | SYS-05 | Chốt threshold rotate (`N`,`T`) + grace window | SYS-04 | XS | Todo |  |  |
+| 6 | SYS-06 | Chốt tie-break khi rotate đồng thời | SYS-05 | XS | Todo |  |  |
+| 7 | SYS-07 | Chốt call state machine voice/video | SYS-02,RT-20,FE-25 | S | Todo |  |  |
+| 8 | SYS-08 | Chốt TURN fallback policy | SYS-07,RT-22 | XS | Todo |  |  |
+| 9 | SYS-09 | Review consistency `02`-`03`-`04`-`05` | SYS-03,SYS-06,SYS-08 | M | Todo |  | Chạy mỗi cuối tuần |
+| 10 | SYS-10 | Thiết kế checklist kiểm thử tích hợp E2E | SYS-09 | S | Todo |  | Theo `08-qa-test-plan.md` |
+| 11 | SYS-11 | Thiết kế workflow CI | SYS-09,API-28,RT-28,FE-28 | M | Todo |  |  |
+| 12 | SYS-12 | Thiết kế workflow CD + smoke test | SYS-11,API-26,RT-26 | M | Todo |  |  |
+| 13 | SYS-13 | Chốt secrets matrix theo môi trường | SYS-11,API-10,RT-02 | S | Todo |  |  |
+| 14 | SYS-14 | Triển khai staging | SYS-12,SYS-13 | M | Todo |  |  |
+| 15 | SYS-15 | Triển khai production | SYS-14 | M | Todo |  |  |
+| 16 | SYS-16 | Chốt runbook demo + rollback | SYS-15 | S | Todo |  |  |
+| 17 | SYS-17 | Quản lý blocker escalation toàn team | Không | XS | In Progress |  | Lặp lại mỗi tuần |
+| 18 | SYS-18 | Final inspection docs-code consistency | SYS-16,FE-28,API-28,RT-28 | M | Todo |  | Tuần cuối |
+| 19 | SYS-19 | Implement cấu hình runtime WebRTC (iceServers, timeout, retry policy) | SYS-08,RT-22,FE-25 | M | Todo |  | Task thực thi kỹ thuật |
+| 20 | SYS-20 | Implement fallback TURN và tiêu chí chuyển audio-only khi mạng yếu | SYS-19,RT-23,FE-23 | M | Todo |  | Task thực thi kỹ thuật |
+| 21 | SYS-21 | Implement orchestration E2EE lifecycle (rotate/rekey conflict handling integration) | SYS-06,RT-18,FE-21,API-19 | L | Todo |  | Task thực thi kỹ thuật |
+| 22 | SYS-22 | Implement integration test suite cho WebRTC+E2EE (happy/failure/recovery) | SYS-20,SYS-21,API-28,RT-28,FE-28 | M | Todo |  | Task thực thi kỹ thuật |
 
-| Mục kiểm | Đạt/Không đạt | Ghi chú |
-|---|---|---|
-| Migration an toàn và có rollback plan |  |  |
-| Endpoint có validate input + error code chuẩn |  |  |
-| Rate limit/OTP/token policy đúng baseline |  |  |
-| Idempotency cho endpoint ghi dữ liệu |  |  |
+---
 
-### Realtime Owner
+## Bảng công việc chi tiết - FE Owner (Bật Tiến)
 
-| Mục kiểm | Đạt/Không đạt | Ghi chú |
-|---|---|---|
-| Event payload đúng contract docs |  |  |
-| Có ack/error cho event quan trọng |  |  |
-| Dedupe request hoạt động đúng |  |  |
-| Timeout và cleanup trạng thái call đúng |  |  |
+| STT | Task ID | Task chi tiết | Phụ thuộc | Ước lượng | Trạng thái | Deadline (tự điền) | Ghi chú |
+|---:|---|---|---|---|---|---|---|
+| 1 | FE-01 | Tạo skeleton route auth/chat/call | Không | S | Todo |  |  |
+| 2 | FE-02 | Tạo auth store (user/token/session) | FE-01 | S | Todo |  |  |
+| 3 | FE-03 | Tạo socket store (connect/reconnect state) | FE-01 | S | Todo |  |  |
+| 4 | FE-04 | Màn đăng ký + request OTP | FE-02,API-07 | S | Todo |  |  |
+| 5 | FE-05 | Màn verify OTP + resend cooldown | FE-04,API-08 | S | Todo |  |  |
+| 6 | FE-06 | Màn login (email/username) | FE-02,API-09 | S | Todo |  |  |
+| 7 | FE-07 | Xử lý refresh token khi 401 | FE-06,API-10 | S | Todo |  |  |
+| 8 | FE-08 | UI tìm user theo `@username` | FE-06,API-15 | S | Todo |  |  |
+| 9 | FE-09 | UI tìm user theo email (exact) | FE-06,API-16 | S | Todo |  |  |
+| 10 | FE-10 | UI tạo conversation direct | FE-08,FE-09,API-17 | S | Todo |  |  |
+| 11 | FE-11 | Join room theo `conversationId` | FE-10,RT-04 | XS | Todo |  |  |
+| 12 | FE-12 | Mã hóa plaintext -> AES-GCM envelope | FE-11 | M | Todo |  | Theo `05-e2ee.md` |
+| 13 | FE-13 | Emit `chat:send` với `requestId` | FE-12,RT-09,API-19 | XS | Todo |  |  |
+| 14 | FE-14 | Queue retry backoff cho gửi tin | FE-13,RT-10 | S | Todo |  | Theo `03-events.md` |
+| 15 | FE-15 | Nhận `chat:message` và giải mã | FE-12,RT-12 | S | Todo |  |  |
+| 16 | FE-16 | Gửi `chat:delivered` | FE-15 | XS | Todo |  |  |
+| 17 | FE-17 | Gửi `chat:read` | FE-15 | XS | Todo |  |  |
+| 18 | FE-18 | Hiển thị sent/delivered/read | FE-16,FE-17,API-21,API-22 | S | Todo |  |  |
+| 19 | FE-19 | Implement key session state machine | FE-12,RT-15,RT-16 | M | Todo |  |  |
+| 20 | FE-20 | Trigger key rotation theo count/time | FE-19,SYS-05,RT-17 | S | Todo |  |  |
+| 21 | FE-21 | Rekey flow khi mismatch `keyVersion` | FE-19,RT-19,SYS-21 | S | Todo |  |  |
+| 22 | FE-22 | Incoming call modal | FE-03,RT-20 | S | Todo |  |  |
+| 23 | FE-23 | Voice call UI + mute/unmute | FE-22 | M | Todo |  |  |
+| 24 | FE-24 | Video call UI + camera on/off | FE-22 | M | Todo |  |  |
+| 25 | FE-25 | WebRTC offer/answer/ICE handlers | FE-23,FE-24,RT-22,SYS-19 | M | Todo |  |  |
+| 26 | FE-26 | Reconnect + resync UI states | FE-14,FE-25,RT-24,API-20 | S | Todo |  |  |
+| 27 | FE-27 | Error UX cho auth/socket/call | FE-26 | S | Todo |  |  |
+| 28 | FE-28 | Kiểm tra không log plaintext/token | FE-27 | XS | Todo |  | Cổng bảo mật FE |
+
+---
+
+## Bảng công việc chi tiết - API Owner (Minh Tiến)
+
+| STT | Task ID | Task chi tiết | Phụ thuộc | Ước lượng | Trạng thái | Deadline (tự điền) | Ghi chú |
+|---:|---|---|---|---|---|---|---|
+| 1 | API-01 | Thiết kế schema `users` | Không | S | Todo |  |  |
+| 2 | API-02 | Thiết kế schema `conversations` | API-01 | S | Todo |  |  |
+| 3 | API-03 | Thiết kế schema `conversation_members` | API-02 | S | Todo |  |  |
+| 4 | API-04 | Thiết kế schema `messages` (cipher fields) | API-03 | S | Todo |  |  |
+| 5 | API-05 | Thiết kế schema `receipts` | API-04 | XS | Todo |  |  |
+| 6 | API-06 | Migration baseline PostgreSQL | API-01..API-05 | M | Todo |  |  |
+| 7 | API-07 | Endpoint request OTP | API-06 | S | Todo |  |  |
+| 8 | API-08 | Endpoint verify OTP | API-07 | S | Todo |  |  |
+| 9 | API-09 | Endpoint login (email/username) | API-08,FE-06,RT-02 | S | Todo |  |  |
+| 10 | API-10 | Endpoint refresh token rotation | API-09,FE-07 | S | Todo |  |  |
+| 11 | API-11 | Endpoint logout + revoke current session | API-10 | XS | Todo |  |  |
+| 12 | API-12 | Endpoint logout-all + revoke all sessions | API-11 | XS | Todo |  |  |
+| 13 | API-13 | Rate limit OTP theo IP/email | API-07 | S | Todo |  |  |
+| 14 | API-14 | Rate limit search endpoint | API-09 | XS | Todo |  |  |
+| 15 | API-15 | Search theo username prefix | API-09 | S | Todo |  |  |
+| 16 | API-16 | Search theo email exact | API-09 | S | Todo |  |  |
+| 17 | API-17 | Endpoint create/get direct conversation | API-03,FE-10 | S | Todo |  |  |
+| 18 | API-18 | Endpoint list conversations (cursor) | API-17 | S | Todo |  |  |
+| 19 | API-19 | Internal persist message (idempotent) | API-04,RT-09,FE-13 | M | Todo |  |  |
+| 20 | API-20 | Endpoint message history (cursor) | API-19 | S | Todo |  |  |
+| 21 | API-21 | Endpoint mark delivered | API-19,FE-16,RT-12 | XS | Todo |  |  |
+| 22 | API-22 | Endpoint mark read | API-19,FE-17,RT-12 | XS | Todo |  |  |
+| 23 | API-23 | Chuẩn hóa error envelope + error codes | API-09 | S | Todo |  |  |
+| 24 | API-24 | Session storage cho refresh token hash | API-10 | S | Todo |  |  |
+| 25 | API-25 | Reuse detection cho refresh replay | API-24 | S | Todo |  |  |
+| 26 | API-26 | Health/readiness endpoint | API-06 | XS | Todo |  |  |
+| 27 | API-27 | Test OTP expiry/attempt/cooldown | API-07,API-08,FE-05 | S | Todo |  |  |
+| 28 | API-28 | Test refresh rotation/replay revoke-chain | API-10,API-25,FE-07,SYS-10 | S | Todo |  |  |
+
+---
+
+## Bảng công việc chi tiết - Realtime Owner (Lương Thứ)
+
+| STT | Task ID | Task chi tiết | Phụ thuộc | Ước lượng | Trạng thái | Deadline (tự điền) | Ghi chú |
+|---:|---|---|---|---|---|---|---|
+| 1 | RT-01 | Bootstrap Socket.IO server | Không | S | Todo |  |  |
+| 2 | RT-02 | Handshake auth middleware | RT-01,API-09,SYS-03 | S | Todo |  | Theo `03-events.md` |
+| 3 | RT-03 | Mapping `userId-deviceId-socketId` | RT-02 | S | Todo |  |  |
+| 4 | RT-04 | Room join/leave theo `conversationId` | RT-03,API-17,FE-11 | S | Todo |  |  |
+| 5 | RT-05 | `presence:subscribe` handler | RT-04 | XS | Todo |  |  |
+| 6 | RT-06 | `presence:update` broadcast | RT-05 | XS | Todo |  |  |
+| 7 | RT-07 | `chat:send` schema validation | RT-04 | S | Todo |  |  |
+| 8 | RT-08 | Kiểm tra quyền member conversation | RT-07 | XS | Todo |  | Trả `PERMISSION_DENIED` |
+| 9 | RT-09 | Gọi API internal persist message | RT-07,API-19 | S | Todo |  |  |
+| 10 | RT-10 | Emit `system:ack` chuẩn | RT-09 | XS | Todo |  |  |
+| 11 | RT-11 | Emit `system:error` chuẩn | RT-09 | XS | Todo |  |  |
+| 12 | RT-12 | `chat:message` fanout | RT-10 | S | Todo |  |  |
+| 13 | RT-13 | Dedupe theo `requestId + senderDeviceId` | RT-10 | S | Todo |  |  |
+| 14 | RT-14 | Chặn replay theo `senderDeviceId + nonce + keyVersion` | RT-13,API-19,SYS-04 | S | Todo |  |  |
+| 15 | RT-15 | `key:exchange:init` routing | RT-04 | S | Todo |  |  |
+| 16 | RT-16 | `key:exchange:response` routing | RT-15 | XS | Todo |  |  |
+| 17 | RT-17 | `key:rotate` routing | RT-16 | S | Todo |  |  |
+| 18 | RT-18 | Tie-break khi rotate đồng thời | RT-17,SYS-06 | S | Todo |  |  |
+| 19 | RT-19 | `key:rekey_required` routing | RT-17 | XS | Todo |  |  |
+| 20 | RT-20 | `call:start` + `call:incoming` | RT-04 | S | Todo |  |  |
+| 21 | RT-21 | `call:accept/reject/end` | RT-20 | S | Todo |  |  |
+| 22 | RT-22 | `call:offer/answer/ice` relay | RT-21,FE-25,SYS-19 | M | Todo |  |  |
+| 23 | RT-23 | Timeout + cleanup state call | RT-22 | S | Todo |  |  |
+| 24 | RT-24 | Reconnect resubscription flow | RT-03,RT-23,FE-26 | S | Todo |  |  |
+| 25 | RT-25 | Heartbeat + stale socket cleanup | RT-24 | S | Todo |  |  |
+| 26 | RT-26 | Health endpoint + dependency checks | RT-01 | XS | Todo |  |  |
+| 27 | RT-27 | Test duplicate send/dedupe/replay block | RT-14 | S | Todo |  |  |
+| 28 | RT-28 | Test reconnect during call | RT-24,FE-26,SYS-10 | S | Todo |  |  |
 
 ---
 
