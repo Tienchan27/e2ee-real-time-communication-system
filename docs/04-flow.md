@@ -8,6 +8,7 @@ Mô tả chi tiết từng bước cho chat và call để thành viên triển 
 
 - Hợp đồng API và event đã chốt: `02-api.md`, `03-events.md`.
 - Người dùng đã đăng nhập và kết nối socket thành công.
+- Socket auth được xác thực ở handshake (không gửi authToken trong từng event).
 - Conversation đã có sẵn hoặc được tạo khi bắt đầu.
 - Khóa E2EE ban đầu đã được thiết lập.
 
@@ -65,16 +66,18 @@ Các bước chi tiết:
 1. FE encrypts plaintext with active `keyVersion`.
 2. FE emits `chat:send`.
 3. Realtime validates schema and auth.
-4. Realtime calls API internal persist endpoint.
-5. API persists and returns dedupe status.
-6. Realtime emits ack and fanout.
-7. Recipient decrypts and sends `chat:delivered`.
-8. Read event emitted when recipient views conversation.
+4. Realtime kiểm tra quyền thành viên conversation cho `senderUserId`.
+5. Realtime calls API internal persist endpoint.
+6. API persists and returns dedupe status.
+7. Realtime emits ack and fanout.
+8. Recipient decrypts and sends `chat:delivered`.
+9. Read event emitted when recipient views conversation.
 
 Nhánh lỗi:
 - API persist fail -> realtime returns `system:error` retryable true.
 - Key mismatch on recipient -> recipient emits `key:rekey_required`.
 - Socket disconnect -> sender retries with same `requestId`.
+- Sender không thuộc conversation -> realtime trả `PERMISSION_DENIED`.
 
 Phân công theo bước:
 - Phụ trách FE: bước 1, 2, 7, 8 và đồng bộ trạng thái giao diện.

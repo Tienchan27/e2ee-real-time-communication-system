@@ -31,6 +31,7 @@ Rules:
 - Refresh token lifetime: 7 days.
 - Refresh token rotation: enabled.
 - Reuse detection: revoke session chain on replay.
+- Refresh token chỉ lưu dưới dạng băm trong kho phiên.
 
 Claims baseline:
 ```txt
@@ -72,6 +73,17 @@ exp: number [required]
   - message plaintext.
   - derived symmetric keys.
   - raw password.
+
+## Chính sách lưu trữ và hủy dữ liệu
+
+- OTP records:
+  - giữ tối đa 7 ngày để audit, sau đó xóa mềm hoặc xóa cứng theo chính sách vận hành.
+- Session/revocation records:
+  - giữ tối thiểu bằng thời gian sống refresh token + 7 ngày.
+- Message ciphertext:
+  - giữ theo yêu cầu sản phẩm; không tự động xóa ở v1 nếu chưa có policy nghiệp vụ.
+- Security logs:
+  - giữ tối thiểu 30 ngày.
 
 ## Chống lạm dụng
 

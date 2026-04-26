@@ -105,6 +105,7 @@ Response:
 ```txt
 accessToken: string [required]
 refreshToken: string [required, có xoay vòng]
+refreshTokenId: string(uuid) [required]
 expiresInSec: number [required]
 ```
 
@@ -118,6 +119,15 @@ refreshToken: string [required]
 Response:
 ```txt
 revoked: boolean [required]
+```
+
+### POST `/auth/logout-all`
+
+Mục đích: thu hồi toàn bộ phiên của người dùng hiện tại.
+
+Response:
+```txt
+revokedSessionCount: number [required]
 ```
 
 ## Tìm người dùng
@@ -244,6 +254,8 @@ readAt: string(iso8601) [required]
 - `AUTH_INVALID_CREDENTIALS`
 - `AUTH_TOKEN_EXPIRED`
 - `AUTH_REFRESH_REVOKED`
+- `AUTH_REFRESH_REPLAY_DETECTED`
+- `AUTH_SESSION_REVOKED`
 - `OTP_INVALID`
 - `OTP_EXPIRED`
 - `OTP_RATE_LIMITED`
@@ -258,6 +270,16 @@ readAt: string(iso8601) [required]
 - Hỗ trợ header `Idempotency-Key` cho endpoint ghi dữ liệu.
 - Endpoint persist nội bộ dùng khóa dedupe:
   - `requestId + senderDeviceId`.
+
+## Yêu cầu quản lý phiên và refresh token
+
+- Mỗi lần login phải tạo một `sessionId` riêng.
+- Refresh token phải lưu dưới dạng băm trong kho phiên (không lưu plaintext).
+- Khi gọi `/auth/refresh`:
+  - token cũ bị thu hồi ngay sau khi cấp token mới;
+  - nếu token cũ bị dùng lại, hệ thống trả `AUTH_REFRESH_REPLAY_DETECTED` và thu hồi cả chuỗi phiên liên quan.
+- `/auth/logout` thu hồi phiên hiện tại.
+- `/auth/logout-all` thu hồi toàn bộ phiên của user.
 
 ## Trách nhiệm
 

@@ -10,18 +10,27 @@ Tài liệu này định nghĩa toàn bộ sự kiện Socket.IO để frontend,
 - Mọi event do client khởi tạo bắt buộc có:
   - `requestId: string(uuid)`
   - `timestamp: string(iso8601)`
-  - `authToken: string` (socket auth at handshake preferred; include only if needed for re-auth)
+- Xác thực socket chỉ thực hiện tại handshake:
+  - Client phải gửi access token ở bước handshake.
+  - Event payload không mang `authToken` lặp lại cho mỗi event.
 - Mọi phản hồi từ server phải là một trong hai:
   - `system:ack`
   - `system:error`
+
+## Quy tắc bắt buộc theo phạm vi sự kiện
+
+- Các event thuộc nhóm `chat:*`, `call:*`, `key:*` bắt buộc có `conversationId`.
+- Event thuộc nhóm `presence:*` không yêu cầu `conversationId`.
+- Realtime phải từ chối event với lỗi `PERMISSION_DENIED` nếu `senderUserId` không thuộc conversation mục tiêu.
+- `senderUserId` phải được lấy từ phiên đã xác thực ở handshake.
+- Nếu client gửi `senderUserId` trong payload, server phải bỏ qua và dùng giá trị từ auth context.
 
 ## Envelope chung
 
 ```txt
 requestId: string(uuid) [required]
 eventVersion: number [required]
-conversationId: string(uuid) [optional, required for chat/call/key conversation scope]
-senderUserId: string(uuid) [required]
+senderUserId: string(uuid) [required, server-derived-from-auth-context]
 senderDeviceId: string(uuid) [required]
 timestamp: string(iso8601) [required]
 payload: object [required]
@@ -231,9 +240,17 @@ candidate: object [required]
 
 - `requestId` + `senderDeviceId` được dùng làm khóa dedupe cho event từ client.
 - Realtime phải trả cùng kết quả `system:ack` cho yêu cầu trùng trong cửa sổ dedupe.
+- Với `chat:send`, hệ thống phải từ chối replay nếu trùng cặp `senderDeviceId + nonce` trong cùng `keyVersion`.
 - Chính sách retry phía client:
   - exponential backoff: 500ms, 1s, 2s, 4s, stop at 5 attempts.
   - stop retry when `retryable=false`.
+
+## Quy tắc xử lý xung đột xoay khóa
+
+- Nếu cả hai bên cùng phát `key:rotate`, chọn bản ghi có:
+  1. `newKeyVersion` lớn hơn.
+  2. Nếu bằng nhau, ưu tiên `senderUserId` có giá trị UUID nhỏ hơn theo thứ tự từ điển.
+- Bên bị loại phải đồng bộ lại khóa và gửi `system:ack` cho rotate được chấp nhận.
 
 ## Mã lỗi tối thiểu
 
