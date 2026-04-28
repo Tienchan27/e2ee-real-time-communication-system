@@ -122,9 +122,34 @@ Quy tắc bổ sung:
 
 ## Chống lạm dụng
 
-- Rate-limit auth and search endpoints.
-- Socket connection throttling per IP/device.
-- Basic anti-spam for chat send burst.
+### Giới hạn tần suất (Rate Limiting)
+
+Giới hạn tần suất được áp dụng để chống tấn công credential stuffing, brute-force, và lạm dụng API.
+
+**Các endpoint xác thực:**
+- Đăng nhập: 5 lần mỗi 15 phút trên mỗi IP.
+- Đăng ký: 3 lần mỗi giờ trên mỗi IP.
+- Xác minh OTP: 5 lần mỗi 10 phút trên mỗi email.
+- Gửi lại OTP: 1 lần mỗi 60 giây trên mỗi email.
+- Yêu cầu đặt lại mật khẩu: 3 lần mỗi giờ trên mỗi email.
+
+**Các endpoint tìm kiếm:**
+- Tìm kiếm người dùng: 30 yêu cầu mỗi phút trên mỗi người dùng.
+
+**Chat/Tin nhắn:**
+- Gửi tin nhắn: 100 tin nhắn mỗi phút trên mỗi người dùng.
+- Danh sách cuộc trò chuyện: 50 yêu cầu mỗi phút trên mỗi người dùng.
+
+**Kết nối Socket:**
+- Số lượng kết nối đồng thời tối đa trên mỗi người dùng: 5 thiết bị.
+- Điều chế nỗ lực kết nối: 10 lần mỗi phút trên mỗi IP.
+- Điều chế sự kiện tin nhắn: 100 lần mỗi phút trên mỗi kết nối.
+
+**Triển khai:**
+- Redis-backed sliding window counter (SlidingWindowRateLimiter).
+- Tự động xóa TTL sau khi window hết hạn.
+- Trả về `429 Too Many Requests` với header `Retry-After`.
+- Ghi lại vi phạm giới hạn tần suất để giám sát.
 
 ## Mô hình đe dọa mức cơ bản
 
