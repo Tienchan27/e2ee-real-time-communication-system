@@ -36,6 +36,11 @@ timestamp: string(iso8601) [required]
 payload: object [required]
 ```
 
+Lưu ý triển khai:
+- Client chỉ gửi payload nghiệp vụ + `requestId` + `timestamp`.
+- `senderUserId` và `senderDeviceId` là trường chuẩn hóa do Realtime gắn từ auth context handshake trước khi xử lý quyền hoặc persist.
+- Client không được quyền override các trường này.
+
 ## Envelope Ack/Error
 
 ### system:ack
@@ -238,9 +243,9 @@ candidate: object [required]
 
 ## Idempotency và retry
 
-- `requestId` + `senderDeviceId` được dùng làm khóa dedupe cho event từ client.
+- `requestId + senderDeviceId + conversationId` được dùng làm khóa dedupe cho event từ client.
 - Realtime phải trả cùng kết quả `system:ack` cho yêu cầu trùng trong cửa sổ dedupe.
-- Với `chat:send`, hệ thống phải từ chối replay nếu trùng cặp `senderDeviceId + nonce` trong cùng `keyVersion`.
+- Với `chat:send`, hệ thống phải từ chối replay nếu trùng cặp `senderDeviceId + conversationId + nonce` trong cùng `keyVersion`.
 - Chính sách retry phía client:
   - exponential backoff: 500ms, 1s, 2s, 4s, stop at 5 attempts.
   - stop retry when `retryable=false`.

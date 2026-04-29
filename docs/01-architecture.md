@@ -58,10 +58,15 @@ flowchart LR
 ## Sở hữu dữ liệu
 
 - PostgreSQL là nguồn dữ liệu chuẩn cho user, conversation, message, receipt.
+- PostgreSQL là nguồn dữ liệu chuẩn cho OTP records, session và refresh token hash.
 - Realtime chỉ giữ trạng thái tạm:
   - ánh xạ socketId và userId;
   - trạng thái cuộc gọi ngắn hạn;
   - bảng dedupe/ack tạm thời.
+- Redis (khi bật) chỉ là lớp hỗ trợ hiệu năng:
+  - counter rate limit;
+  - cache TTL ngắn;
+  - Socket.IO adapter/pub-sub khi scale đa instance.
 
 ## Luồng dữ liệu chính
 
@@ -89,6 +94,7 @@ flowchart LR
   - 1 realtime instance.
   - 1 PostgreSQL instance.
 - Khi cần scale:
+  - thêm Redis cho rate-limit counter và cache ngắn hạn;
   - thêm Redis adapter cho realtime đa instance;
   - scale ngang API;
   - giữ mọi contract theo `conversationId` để mở rộng group sau này.

@@ -14,31 +14,31 @@ Mô tả chi tiết từng bước cho chat và call để thành viên triển 
 
 ## Luồng A: Đăng ký và đăng nhập
 
-1. FE submits email, username, password to `/auth/register/request-otp`.
-2. API creates OTP request and sends email OTP.
-3. FE submits OTP to `/auth/register/verify-otp`.
-4. API creates account, returns access+refresh tokens.
-5. FE stores tokens, initializes socket auth handshake.
+1. FE gửi email, username, password tới `/auth/register/request-otp`.
+2. API tạo yêu cầu OTP và gửi OTP qua email.
+3. FE gửi OTP tới `/auth/register/verify-otp`.
+4. API tạo tài khoản, trả access token + refresh token.
+5. FE lưu token và khởi tạo socket auth ở bước handshake.
 
 Nhánh lỗi:
-- OTP expired -> FE prompts resend OTP with cooldown UI.
-- Too many OTP requests -> block and show retry timer.
+- OTP hết hạn -> FE hiển thị gửi lại OTP với cooldown.
+- Quá nhiều yêu cầu OTP -> chặn tạm thời và hiển thị thời gian thử lại.
 
 Phân công:
 - Phụ trách FE: trạng thái giao diện và biểu mẫu.
 - Phụ trách API: vòng đời OTP và xác thực.
-- System Owner: policy and security review.
+- System Owner: rà chính sách và cổng bảo mật.
 
 ## Luồng B: Bắt đầu cuộc trò chuyện
 
-1. FE searches user via `/users/search` using `@username` or email.
+1. FE tìm user qua `/users/search` bằng `@username` hoặc email.
 2. FE calls `/conversations/direct` with `peerUserId`.
 3. API returns `conversationId`.
-4. FE joins conversation socket room through realtime.
+4. FE tham gia room socket của conversation qua realtime.
 
 Nhánh lỗi:
-- user not found -> show empty result.
-- permission denied -> hide restricted target.
+- Không tìm thấy user -> hiển thị kết quả rỗng.
+- Bị từ chối quyền -> ẩn đối tượng bị hạn chế.
 
 ## Luồng C: Gửi tin nhắn E2EE
 
@@ -63,74 +63,74 @@ sequenceDiagram
 
 Các bước chi tiết:
 
-1. FE encrypts plaintext with active `keyVersion`.
-2. FE emits `chat:send`.
-3. Realtime validates schema and auth.
-4. Realtime kiểm tra quyền thành viên conversation cho `senderUserId`.
-5. Realtime calls API internal persist endpoint.
-6. API persists and returns dedupe status.
-7. Realtime emits ack and fanout.
-8. Recipient decrypts and sends `chat:delivered`.
-9. Read event emitted when recipient views conversation.
+1. FE mã hóa plaintext với `keyVersion` đang hoạt động.
+2. FE gửi event `chat:send`.
+3. Realtime kiểm tra schema và auth context.
+4. Realtime suy ra `senderUserId` từ auth context ở handshake, rồi kiểm tra quyền thành viên conversation.
+5. Realtime gọi API nội bộ để persist.
+6. API lưu bản ghi và trả trạng thái dedupe.
+7. Realtime gửi ack và fanout.
+8. Recipient giải mã và gửi `chat:delivered`.
+9. Event đọc được gửi khi recipient mở conversation.
 
 Nhánh lỗi:
-- API persist fail -> realtime returns `system:error` retryable true.
-- Key mismatch on recipient -> recipient emits `key:rekey_required`.
-- Socket disconnect -> sender retries with same `requestId`.
+- API persist lỗi -> realtime trả `system:error` với `retryable=true`.
+- Key mismatch ở recipient -> recipient gửi `key:rekey_required`.
+- Socket ngắt -> sender retry với cùng `requestId`.
 - Sender không thuộc conversation -> realtime trả `PERMISSION_DENIED`.
 
 Phân công theo bước:
-- Phụ trách FE: bước 1, 2, 7, 8 và đồng bộ trạng thái giao diện.
-- Phụ trách Realtime: bước 3, 6, routing và dedupe.
-- Phụ trách API: bước 4, 5, lưu trữ và trạng thái.
-- System Owner: key mismatch policy.
+- Phụ trách FE: bước 1, 2, 8, 9 và đồng bộ trạng thái giao diện.
+- Phụ trách Realtime: bước 3, 4, 5, 7 (routing, authz, dedupe).
+- Phụ trách API: bước 6 và đồng bộ trạng thái message/receipt.
+- System Owner: chốt chính sách key mismatch/rekey.
 
 ## Luồng D: Cuộc gọi thoại/video
 
-1. Caller FE emits `call:start` with `callType` (`voice` or `video`).
-2. Realtime emits `call:incoming` to callee.
-3. Callee accepts/rejects.
-4. If accepted:
-   - offer/answer exchange via `call:offer` and `call:answer`.
-   - ICE exchange via `call:ice`.
-5. P2P media established; TURN fallback if direct path fails.
-6. Either side emits `call:end`.
+1. FE bên gọi gửi `call:start` với `callType` (`voice` hoặc `video`).
+2. Realtime gửi `call:incoming` tới bên nhận.
+3. Bên nhận chấp nhận hoặc từ chối.
+4. Nếu chấp nhận:
+   - trao đổi offer/answer qua `call:offer` và `call:answer`.
+   - trao đổi ICE qua `call:ice`.
+5. Thiết lập media P2P; fallback TURN nếu đường trực tiếp thất bại.
+6. Một trong hai bên gửi `call:end`.
 
 Nhánh lỗi:
-- timeout without accept -> mark missed call.
-- ICE gather/connect fail -> auto retry ICE then end with reason.
-- reconnect during call -> attempt renegotiation window (max 20s).
+- Hết thời gian chờ mà chưa accept -> đánh dấu cuộc gọi nhỡ.
+- ICE gather/connect thất bại -> tự retry ICE rồi kết thúc kèm lý do.
+- Mất kết nối giữa cuộc gọi -> thử renegotiation trong cửa sổ tối đa 20 giây.
 
 Phân công theo bước:
 - Phụ trách FE: quyền truy cập media và trạng thái giao diện cuộc gọi.
 - Phụ trách Realtime: routing signaling và timeout.
-- System Owner: call state machine and TURN fallback criteria.
+- System Owner: chốt call state machine và tiêu chí fallback TURN.
 
 ## Luồng E: Reconnect và đồng bộ lại
 
-1. Client reconnects socket with last known cursor/event marker.
-2. Realtime re-authenticates and restores subscriptions.
-3. FE fetches missed history via API fallback endpoint.
-4. FE applies pending delivery/read sync.
+1. Client reconnect socket với cursor/event marker gần nhất.
+2. Realtime xác thực lại và khôi phục subscriptions.
+3. FE lấy phần lịch sử bị lỡ qua API fallback endpoint.
+4. FE áp dụng đồng bộ delivery/read còn treo.
 
 Nhánh lỗi:
-- token expired -> refresh token flow then reconnect.
-- cursor too old -> full conversation sync via paginated API.
+- Token hết hạn -> chạy flow refresh token rồi reconnect.
+- Cursor quá cũ -> đồng bộ full conversation bằng API phân trang.
 
 ## Bóc tách công việc theo nhóm
 
 - Việc của FE:
-  - Chat send/retry queue with idempotent requestId.
+  - Queue gửi/retry chat với `requestId` idempotent.
   - Delivered/read state updates.
-  - Call UI state machine for voice/video.
+  - State machine UI cuộc gọi voice/video.
 - Việc của API:
-  - Internal message persist endpoint.
-  - Search and conversation endpoints.
+  - Endpoint persist tin nhắn nội bộ.
+  - Endpoint tìm kiếm và conversation.
   - Receipt endpoints.
 - Việc của Realtime:
-  - Room subscription and presence events.
-  - Signal routing and dedupe map.
-  - Ack/error envelope standard.
+  - Subscription room và event presence.
+  - Routing signaling và bản đồ dedupe.
+  - Chuẩn hóa envelope ack/error.
 - Việc của System Owner:
   - E2EE key mismatch/rekey strategy validation.
   - Integration acceptance tests and rollout gates.

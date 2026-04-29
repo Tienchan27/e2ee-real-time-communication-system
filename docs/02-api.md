@@ -231,6 +231,10 @@ createdAt: string(iso8601) [required]
 deduped: boolean [required]
 ```
 
+Quy tắc bảo mật nội bộ:
+- Endpoint này chỉ chấp nhận gọi từ Realtime service đã xác thực service-to-service.
+- `senderUserId` và `senderDeviceId` phải là giá trị Realtime suy ra từ auth context handshake, không lấy trực tiếp từ client payload.
+
 ## Trạng thái nhận và đọc
 
 ### POST `/messages/{messageId}/delivered`
@@ -280,6 +284,15 @@ readAt: string(iso8601) [required]
   - nếu token cũ bị dùng lại, hệ thống trả `AUTH_REFRESH_REPLAY_DETECTED` và thu hồi cả chuỗi phiên liên quan.
 - `/auth/logout` thu hồi phiên hiện tại.
 - `/auth/logout-all` thu hồi toàn bộ phiên của user.
+
+## Chính sách Redis cho auth/OTP (v1)
+
+- Nguồn dữ liệu chuẩn (source of truth) cho OTP, session, refresh token hash là PostgreSQL.
+- Redis không dùng làm storage chính cho OTP/session ở v1.
+- Redis chỉ dùng cho:
+  - counter rate limit theo IP/email;
+  - cache TTL ngắn để giảm tải truy vấn lặp;
+  - dữ liệu tạm có thể tái dựng từ PostgreSQL khi Redis mất dữ liệu.
 
 ## Trách nhiệm
 

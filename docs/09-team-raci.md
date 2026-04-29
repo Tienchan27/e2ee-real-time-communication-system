@@ -114,7 +114,7 @@ Một task chỉ được chuyển `Done` khi đạt đủ 8 điều kiện:
 Ghi chú:
 
 - Ước lượng dùng đơn vị `0.5 ngày`, `1 ngày`, `2 ngày`.
-- Deadline do thành viên tự điền theo sprint thực tế.
+- System Owner chốt mốc sprint, sau đó từng owner tự điền deadline task trong khung sprint đó.
 
 ---
 

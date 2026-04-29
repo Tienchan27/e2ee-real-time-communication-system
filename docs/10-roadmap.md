@@ -26,7 +26,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 
 ### Cột deadline
 
-- Cột `Deadline (tự điền)` để trống, System Owner tự quyết theo tuần thực tế.
+- System Owner chốt mốc sprint theo tuần, từng owner tự điền `Deadline (tự điền)` của task trong khung đó.
 
 ---
 
@@ -100,7 +100,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 9 | FE-09 | UI tìm user theo email (exact) | FE-06,API-16 | S | Todo |  |  |
 | 10 | FE-10 | UI tạo conversation direct | FE-08,FE-09,API-17 | S | Todo |  |  |
 | 11 | FE-11 | Join room theo `conversationId` | FE-10,RT-04 | XS | Todo |  |  |
-| 12 | FE-12 | Mã hóa plaintext -> AES-GCM envelope | FE-11 | M | Todo |  | Theo `05-e2ee.md` |
+| 12 | FE-12 | Mã hóa plaintext -> AES-GCM envelope | FE-11,SYS-04 | M | Todo |  | Theo `05-e2ee.md` |
 | 13 | FE-13 | Emit `chat:send` với `requestId` | FE-12,RT-09,API-19 | XS | Todo |  |  |
 | 14 | FE-14 | Queue retry backoff cho gửi tin | FE-13,RT-10 | S | Todo |  | Theo `03-events.md` |
 | 15 | FE-15 | Nhận `chat:message` và giải mã | FE-12,RT-12 | S | Todo |  |  |
@@ -111,8 +111,8 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 20 | FE-20 | Trigger key rotation theo count/time | FE-19,SYS-05,RT-17 | S | Todo |  |  |
 | 21 | FE-21 | Rekey flow khi mismatch `keyVersion` | FE-19,RT-19,SYS-21 | S | Todo |  |  |
 | 22 | FE-22 | Incoming call modal | FE-03,RT-20 | S | Todo |  |  |
-| 23 | FE-23 | Voice call UI + mute/unmute | FE-22 | M | Todo |  |  |
-| 24 | FE-24 | Video call UI + camera on/off | FE-22 | M | Todo |  |  |
+| 23 | FE-23 | Voice call UI + mute/unmute | FE-22,SYS-07 | M | Todo |  |  |
+| 24 | FE-24 | Video call UI + camera on/off | FE-22,SYS-07 | M | Todo |  |  |
 | 25 | FE-25 | WebRTC offer/answer/ICE handlers | FE-23,FE-24,RT-22,SYS-19 | M | Todo |  |  |
 | 26 | FE-26 | Reconnect + resync UI states | FE-14,FE-25,RT-24,API-20 | S | Todo |  |  |
 | 27 | FE-27 | Error UX cho auth/socket/call | FE-26 | S | Todo |  |  |
@@ -172,16 +172,16 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 11 | RT-11 | Emit `system:error` chuẩn | RT-09 | XS | Todo |  |  |
 | 12 | RT-12 | `chat:message` fanout | RT-10 | S | Todo |  |  |
 | 13 | RT-13 | Dedupe theo `requestId + senderDeviceId` | RT-10 | S | Todo |  |  |
-| 14 | RT-14 | Chặn replay theo `senderDeviceId + nonce + keyVersion` | RT-13,API-19,SYS-04 | S | Todo |  |  |
+| 14 | RT-14 | Chặn replay theo `senderDeviceId + conversationId + nonce + keyVersion` | RT-13,API-19,SYS-04 | S | Todo |  |  |
 | 15 | RT-15 | `key:exchange:init` routing | RT-04 | S | Todo |  |  |
 | 16 | RT-16 | `key:exchange:response` routing | RT-15 | XS | Todo |  |  |
 | 17 | RT-17 | `key:rotate` routing | RT-16 | S | Todo |  |  |
 | 18 | RT-18 | Tie-break khi rotate đồng thời | RT-17,SYS-06 | S | Todo |  |  |
 | 19 | RT-19 | `key:rekey_required` routing | RT-17 | XS | Todo |  |  |
-| 20 | RT-20 | `call:start` + `call:incoming` | RT-04 | S | Todo |  |  |
+| 20 | RT-20 | `call:start` + `call:incoming` | RT-04,SYS-07 | S | Todo |  |  |
 | 21 | RT-21 | `call:accept/reject/end` | RT-20 | S | Todo |  |  |
 | 22 | RT-22 | `call:offer/answer/ice` relay | RT-21,FE-25,SYS-19 | M | Todo |  |  |
-| 23 | RT-23 | Timeout + cleanup state call | RT-22 | S | Todo |  |  |
+| 23 | RT-23 | Timeout + cleanup state call | RT-22,SYS-08 | S | Todo |  |  |
 | 24 | RT-24 | Reconnect resubscription flow | RT-03,RT-23,FE-26 | S | Todo |  |  |
 | 25 | RT-25 | Heartbeat + stale socket cleanup | RT-24 | S | Todo |  |  |
 | 26 | RT-26 | Health endpoint + dependency checks | RT-01 | XS | Todo |  |  |
@@ -196,4 +196,37 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 - Không chuyển `Done` nếu thiếu test hoặc thiếu cập nhật docs.
 - Không demo call nếu TURN chưa sẵn sàng.
 - Không release nếu smoke test fail.
+
+---
+
+## Breakdown bổ sung cho task `M/L` (để triển khai không mơ hồ)
+
+- `SYS-21`:
+  - Chốt interface lifecycle chung giữa FE-RT-API.
+  - Implement xử lý conflict rotate/rekey theo tie-break đã chốt.
+  - Viết test integration cho nhánh conflict và nhánh recover.
+- `SYS-22`:
+  - Dựng kịch bản test happy path chat E2EE + call.
+  - Dựng kịch bản failure (network drop, key mismatch, timeout call).
+  - Dựng kịch bản recovery (reconnect/resync/rekey).
+- `FE-12`:
+  - Tạo module encrypt/decrypt thuần.
+  - Chuẩn hóa envelope theo `05-e2ee.md`.
+  - Viết unit test cho nonce/keyVersion/tag validation.
+- `FE-25`:
+  - Tách call service khỏi UI component.
+  - Implement offer/answer/ICE + timeout handling.
+  - Kiểm thử chuyển trạng thái call theo state machine.
+- `API-06`:
+  - Tạo migration base và rollback script.
+  - Seed dữ liệu tối thiểu cho local test.
+  - Kiểm thử apply migration trên DB trống và DB có dữ liệu mẫu.
+- `API-19`:
+  - Thiết kế idempotency key storage.
+  - Lưu ciphertext + metadata theo transaction.
+  - Trả kết quả idempotent thống nhất cho RT (`new`/`duplicate`).
+- `RT-22`:
+  - Validate schema cho offer/answer/ice.
+  - Relay theo conversation room và đối tượng nhận hợp lệ.
+  - Cleanup state khi timeout/hangup để tránh socket leak.
 
