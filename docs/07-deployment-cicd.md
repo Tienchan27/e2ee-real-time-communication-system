@@ -10,6 +10,7 @@ Cung cấp kế hoạch triển khai free-tier và pipeline CI/CD có thể ch�
 - API Service: Render/Railway-like free web service.
 - Realtime Service: Render/Railway-like free web service.
 - PostgreSQL: Neon/Supabase free tier.
+- Redis: Upstash/Redis free tier (optional v1, bật khi cần rate-limit/cache/socket scale).
 - TURN: coturn on always-free VM.
 
 ## Môi trường
@@ -39,6 +40,12 @@ Cung cấp kế hoạch triển khai free-tier và pipeline CI/CD có thể ch�
 - `API_INTERNAL_TOKEN`
 - `SOCKET_CORS_ORIGINS`
 - `REDIS_URL` (optional v1, required when scaling)
+
+## Chính sách lưu trữ OTP/session/token
+
+- PostgreSQL là source of truth cho OTP records, session và refresh token hash.
+- Redis chỉ dùng cho lớp hiệu năng (rate-limit counters, cache TTL ngắn, Socket.IO adapter/pub-sub).
+- Không dùng Redis làm storage chính cho OTP/session ở v1 để giữ audit trail và replay-detection ổn định.
 
 ### Frontend
 - `VITE_API_BASE_URL`

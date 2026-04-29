@@ -11,9 +11,9 @@ Thiết lập baseline bảo mật đúng và đủ cho hệ thống có triển
 - Message ID: UUID.
 - Request/Event ID: UUID for traceability and idempotency.
 
-Rules:
-- IDs must be immutable.
-- IDs must not encode private information.
+Quy tắc:
+- ID phải bất biến sau khi tạo.
+- ID không được mã hóa thông tin riêng tư.
 
 ## Thông tin xác thực và mật khẩu
 
@@ -32,8 +32,9 @@ Rules:
 - Refresh token rotation: enabled.
 - Reuse detection: revoke session chain on replay.
 - Refresh token chỉ lưu dưới dạng băm trong kho phiên.
+- Source of truth cho session và refresh token hash là PostgreSQL.
 
-Claims baseline:
+Baseline claim:
 ```txt
 sub: string(uuid) [required]
 sid: string(uuid) [required]
@@ -49,27 +50,38 @@ exp: number [required]
 - Max attempts: 5.
 - Cooldown resend: 60 seconds.
 - Per email rate limit and per IP rate limit required.
+- Source of truth cho OTP records là PostgreSQL.
+
+## Redis policy (v1)
+
+- Redis không là nguồn dữ liệu chuẩn cho OTP/session/token ở v1.
+- Redis chỉ dùng cho dữ liệu tạm:
+  - rate-limit counters;
+  - cache TTL ngắn;
+  - realtime pub/sub adapter khi scale.
+- Nếu Redis bị mất dữ liệu, hệ thống vẫn khôi phục được trạng thái nghiệp vụ chính từ PostgreSQL.
 
 ## Quyền riêng tư khi tìm người dùng
 
-- Public search returns:
+- Public search trả về:
   - `username`, `displayName`, `avatarUrl`.
-- Public search MUST NOT return raw email.
+- Public search không được trả email raw.
 - Exact email search may be allowed but response remains masked/minimal.
 
 ## Bảo mật đường truyền
 
-- HTTPS only in non-local environments.
+- Chỉ dùng HTTPS ở môi trường không phải local.
 - Secure websocket (`wss`) in non-local environments.
 - CORS allowlist for known frontend origins.
+- Internal API giữa Realtime và API phải có xác thực service-to-service (ví dụ: mTLS hoặc service token xoay vòng).
 
 ## Logging và secrets
 
-- MUST mask:
+- Bắt buộc che:
   - email local-part.
   - tokens.
   - OTP.
-- MUST NOT log:
+- Không được log:
   - message plaintext.
   - derived symmetric keys.
   - raw password.
@@ -109,7 +121,7 @@ exp: number [required]
 - Password hashes validated against policy.
 - Token rotation test passes.
 - OTP expiry/attempt lock tests pass.
-- No plaintext leaked in logs in normal flows.
+- Không lộ plaintext trong log ở flow bình thường.
 
 ## Trách nhiệm
 
