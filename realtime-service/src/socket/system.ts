@@ -14,7 +14,6 @@ export type SocketErrorCode =
   | "INTERNAL_ERROR";
 
 export function emitAck(socket: Socket, requestId: string, meta?: Record<string, unknown>) {
-  // Ack la cau tra loi thanh cong bat buoc cho event client gui len.
   socket.emit("system:ack", {
     requestId,
     status: "ok",
@@ -32,7 +31,6 @@ export function emitError(
   retryable = false,
   details?: Record<string, unknown>,
 ) {
-  // Error event giup FE xu ly loi socket thong nhat, khong dung HTTP status.
   socket.emit("system:error", {
     requestId: requestId ?? createUuidV7(),
     status: "error",

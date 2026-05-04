@@ -10,7 +10,6 @@ type ConversationRoomPayload = {
 };
 
 export function conversationRoomName(conversationId: string): string {
-  // Prefix giup tranh nham room conversation voi room user/call trong tuong lai.
   return `conversation:${conversationId}`;
 }
 
@@ -32,7 +31,6 @@ export async function restoreConversationRooms(
   const auth = socket.data.auth;
 
   for (const conversationId of subscriptionStore.getConversationIds(auth.userId, auth.deviceId)) {
-    // RT-24: Khi reconnect cung device, realtime co the join lai room da nho trong memory.
     if (await accessService.canJoinConversation(auth.userId, conversationId)) {
       await socket.join(conversationRoomName(conversationId));
     }
@@ -70,16 +68,14 @@ export function registerRoomHandlers(
       await socket.join(roomName);
       subscriptionStore.remember(auth.userId, auth.deviceId, event.payload.conversationId);
 
-      // Bao cho cac thanh vien dang trong room biet co peer moi vao, de ho re-trigger
-      // key exchange (tranh race khi ben kia join room sau khi init da phat).
+      // Peers may re-run key exchange when someone joins after init was sent.
       socket.to(roomName).emit("conversation:peer_joined", {
         conversationId: event.payload.conversationId,
         userId: auth.userId,
         deviceId: auth.deviceId,
       });
 
-      // If there is a ringing call in this conversation and this socket is the callee,
-      // re-emit call:incoming so they see the call even if they joined the room after it started.
+      // Re-deliver ringing call if callee joined the room after call:incoming.
       const ringingCall = callStore.getRingingCallForConversation(event.payload.conversationId);
       if (ringingCall && ringingCall.callerUserId !== auth.userId) {
         socket.emit("call:incoming", {

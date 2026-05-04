@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCall } from "../context/CallContext.js";
+import { useChat } from "../context/ChatContext.js";
 import "./ActiveCallOverlay.css";
 
 function formatDuration(sec: number): string {
@@ -20,6 +21,7 @@ export function ActiveCallOverlay() {
     toggleMute,
     toggleVideo,
   } = useCall();
+  const { conversations } = useChat();
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -66,8 +68,17 @@ export function ActiveCallOverlay() {
         ? "Đang kết nối..."
         : "Đang trong cuộc gọi";
 
+  let remoteName = "Cuộc gọi";
+  for (const conv of conversations.values()) {
+    const member = conv.members.find((m) => m.userId === session.remoteUserId);
+    if (member) {
+      remoteName = member.displayName;
+      break;
+    }
+  }
+
   return (
-    <div className="active-call-overlay">
+    <div className={`active-call-overlay${isVideo ? " video" : ""}`}>
       <div className="active-call-content">
         {error && <div className="active-call-error">{error}</div>}
 
@@ -75,6 +86,12 @@ export function ActiveCallOverlay() {
           <div className="active-call-videos">
             <video ref={remoteVideoRef} autoPlay playsInline className="remote-video" />
             <video ref={localVideoRef} autoPlay playsInline muted className="local-video" />
+            <div className="video-call-header">
+              <span className="video-call-name">{remoteName}</span>
+              <span className="video-call-status">
+                {session.phase === "active" ? formatDuration(callDuration) : statusLabel}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="active-call-voice">

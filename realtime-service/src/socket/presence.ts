@@ -36,7 +36,6 @@ export function registerPresenceHandlers(
 
       subscriptionStore.subscribe(socket.id, event.payload.targets);
 
-      // Gui ngay trang thai hien tai de FE khong phai doi user thay doi moi biet status.
       for (const targetUserId of event.payload.targets) {
         socket.emit("presence:update", connectionStore.getPresence(targetUserId));
       }
@@ -63,7 +62,6 @@ export function broadcastPresenceUpdate(
   subscriptionStore: PresenceSubscriptionStore,
   presence: PresenceStatus,
 ) {
-  // Chi gui update cho cac socket da subscribe user nay.
   for (const socketId of subscriptionStore.getSubscriberSocketIds(presence.userId)) {
     io.to(socketId).emit("presence:update", presence);
   }

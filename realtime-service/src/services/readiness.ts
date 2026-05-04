@@ -46,7 +46,6 @@ function errorCheck(name: string, required: boolean, message: string): Dependenc
 
 async function checkInternalApi(config: AppConfig): Promise<DependencyCheck> {
   if (config.allowDevConversationAccess && config.allowDevMessagePersist) {
-    // Local dev dang fake membership + persist, nen API internal chua bat buoc de test realtime.
     return skippedCheck(
       "api-internal",
       "Skipped in local dev because conversation access and message persist are using dev fallbacks.",
@@ -84,12 +83,10 @@ async function checkInternalApi(config: AppConfig): Promise<DependencyCheck> {
 
 function checkRuntimeConfig(config: AppConfig): DependencyCheck {
   if (config.nodeEnv === "production" && !config.jwtAccessSecret) {
-    // Production bat buoc co JWT secret, neu khong socket auth se khong an toan.
     return errorCheck("runtime-config", true, "JWT_ACCESS_SECRET is required in production.");
   }
 
   if (config.nodeEnv === "production" && !config.apiInternalToken) {
-    // Production bat buoc co service token de goi API internal.
     return errorCheck("runtime-config", true, "API_INTERNAL_TOKEN is required in production.");
   }
 

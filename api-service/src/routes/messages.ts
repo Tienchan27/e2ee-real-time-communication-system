@@ -55,6 +55,8 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
     sender_username: string;
     sender_display_name: string;
     sender_avatar_url: string | null;
+    delivered_user_ids: string[] | null;
+    read_user_ids: string[] | null;
   }>(
     `
       SELECT
@@ -70,9 +72,21 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
         m.created_at,
         u.username AS sender_username,
         u.display_name AS sender_display_name,
-        u.avatar_url AS sender_avatar_url
+        u.avatar_url AS sender_avatar_url,
+        rd.delivered_user_ids,
+        rr.read_user_ids
       FROM messages m
       JOIN users u ON u.id = m.sender_user_id
+      LEFT JOIN LATERAL (
+        SELECT array_agg(user_id) AS delivered_user_ids
+        FROM message_receipts
+        WHERE message_id = m.id AND status = 'delivered'
+      ) rd ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT array_agg(user_id) AS read_user_ids
+        FROM message_receipts
+        WHERE message_id = m.id AND status = 'read'
+      ) rr ON TRUE
       WHERE m.conversation_id = $1
         AND (
           $2::uuid IS NULL
@@ -110,8 +124,8 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
         ...(row.aad ? { aad: row.aad } : {}),
         clientMessageSeq: row.client_message_seq ?? 0,
       },
-      deliveredTo: [],
-      readBy: [],
+      deliveredTo: row.delivered_user_ids ?? [],
+      readBy: row.read_user_ids ?? [],
       createdAt: row.created_at.toISOString(),
     })),
     nextCursor: hasMore ? rows[0]?.id ?? null : null,

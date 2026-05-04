@@ -116,7 +116,6 @@ export class CryptoManager {
     );
   }
 
-  // HKDF: salt=conversationId, info=e2ee-chat-v1
   async deriveSharedKey(
     myPrivateKey: CryptoKey,
     peerPublicKey: CryptoKey,

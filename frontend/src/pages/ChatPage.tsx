@@ -119,6 +119,7 @@ export function ChatPage() {
     loadConversations,
     loadMessages,
     sendMessage,
+    retryMessage,
     presences,
     subscribeToPresence,
     keyReadyConversations,
@@ -126,9 +127,18 @@ export function ChatPage() {
   const { startCall } = useCall();
 
   const [messageText, setMessageText] = useState("");
-  const [isLoadingChat, setIsLoadingChat] = useState(false);
   const [error, setError] = useState("");
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const unsubConnect = socketManager.onConnect(() => setIsReconnecting(false));
+    const unsubDisconnect = socketManager.onDisconnect(() => setIsReconnecting(true));
+    return () => {
+      unsubConnect();
+      unsubDisconnect();
+    };
+  }, []);
 
   const conversationId = (conversationIdParam as UUID) || currentConversationId;
   const conversation = conversationId ? conversations.get(conversationId) : null;
@@ -147,10 +157,7 @@ export function ChatPage() {
       loadConversations();
     }
 
-    setIsLoadingChat(true);
-    loadMessages(conversationId).finally(() => {
-      setIsLoadingChat(false);
-    });
+    void loadMessages(conversationId);
 
     return () => {
       void socketManager.leaveConversation(conversationId);
@@ -158,7 +165,6 @@ export function ChatPage() {
     };
   }, [conversationId, loadMessages]);
 
-  // Subscribe to presence for members of this conversation
   useEffect(() => {
     if (!conversationId || !user) return;
     const conv = conversations.get(conversationId);
@@ -214,7 +220,14 @@ export function ChatPage() {
   }
 
   function renderMessageStatus(message: Message): React.ReactNode {
-    if (message.outboundStatus === "pending_key" || message.outboundStatus === "sending") {
+    if (message.outboundStatus === "pending_key") {
+      return (
+        <span className="message-status pending" title="Đang chờ gửi">
+          <span className="send-spinner" /> Đang chờ
+        </span>
+      );
+    }
+    if (message.outboundStatus === "sending") {
       return (
         <span className="message-status pending">
           <span className="send-spinner" />
@@ -222,7 +235,21 @@ export function ChatPage() {
       );
     }
     if (message.outboundStatus === "failed") {
-      return <span className="message-status failed">✗</span>;
+      return (
+        <button
+          type="button"
+          className="message-status failed"
+          title="Gửi lại"
+          onClick={() =>
+            void retryMessage(
+              conversationId as UUID,
+              (message.clientTempId ?? message.messageId) as UUID,
+            )
+          }
+        >
+          ✗ Gửi lại
+        </button>
+      );
     }
     return (
       <span className="message-status">
@@ -368,7 +395,10 @@ export function ChatPage() {
                           {item.message.senderDisplayName || "Người dùng"}
                         </div>
                       )}
-                      <div className="message-text">
+                      <div
+                        className="message-text"
+                        title={formatMessageTime(item.message.createdAt)}
+                      >
                         {item.message.plaintext ? (
                           item.message.plaintext
                         ) : (
@@ -376,19 +406,20 @@ export function ChatPage() {
                             🔒 Chưa giải mã được
                             {isE2eeSetupAad(item.message.envelope.aad) && (
                               <span className="message-decrypt-hint">
-                                Không thể giải mã — có thể do đổi thiết bị hoặc xóa dữ liệu trình
-                                duyệt. Nhờ người gửi gửi lại tin mới.
+                                Có thể do đổi thiết bị/xoá dữ liệu trình duyệt.
                               </span>
                             )}
                           </span>
                         )}
                       </div>
-                      <div className="message-footer">
-                        <span className="message-time">
-                          {formatMessageTime(item.message.createdAt)}
-                        </span>
-                        {item.message.senderUserId === user.userId && renderMessageStatus(item.message)}
-                      </div>
+                      {item.message.senderUserId === user.userId && (
+                        <div className="message-footer">
+                          <span className="message-time">
+                            {formatMessageTime(item.message.createdAt)}
+                          </span>
+                          {renderMessageStatus(item.message)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -400,8 +431,13 @@ export function ChatPage() {
       </div>
 
       <form className="message-input-form" onSubmit={handleSendMessage}>
-        {isLoadingChat && (
-          <div className="info-message">Đang thiết lập kênh mã hoá an toàn…</div>
+        {isReconnecting && (
+          <div className="info-message reconnecting">Đang kết nối lại…</div>
+        )}
+        {!isReconnecting && !isKeyReady && (
+          <div className="info-message">
+            🔒 Đang thiết lập mã hoá — tin sẽ tự gửi khi sẵn sàng
+          </div>
         )}
         {error && <div className="error-message">{error}</div>}
         <div className="input-group">
@@ -409,15 +445,12 @@ export function ChatPage() {
             type="text"
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
-            placeholder={
-              isLoadingChat ? "Đang thiết lập kênh mã hoá..." : "Nhập tin nhắn..."
-            }
-            disabled={isLoadingChat}
+            placeholder="Nhập tin nhắn..."
             className="message-input"
           />
           <button
             type="submit"
-            disabled={isLoadingChat || !messageText.trim()}
+            disabled={!messageText.trim()}
             className="send-button"
             aria-label="Gửi"
           >

@@ -42,6 +42,7 @@ export function isE2eeSetupAad(aad: Record<string, unknown> | undefined): aad is
 }
 
 export function findGliteSetupAad(messages: Message[]): E2eeSetupAad | undefined {
+  // Earliest setup aad — canonical G-lite key for both peers.
   for (const message of messages) {
     const aad = message.envelope.aad;
     if (isE2eeSetupAad(aad)) return aad;
@@ -149,22 +150,30 @@ export async function ensureKeyFromGliteHistory(
   const setupAad = findGliteSetupAad(messages);
   if (!setupAad) return false;
 
+  const setupMessage = messages.find((m) => isE2eeSetupAad(m.envelope.aad));
+  const trialTarget = setupMessage ?? messages.find((m) => m.envelope.keyVersion === 1);
+
+  // 1. Uu tien khoa hien co (da luu luc gui / nhan truoc do). KHONG pha khoa dang dung duoc:
+  //    nguoi GUI khong the re-derive tu setupAad cua chinh minh (ECDH bang device key cua minh
+  //    + ephemeral cua minh -> ra khoa rac, khac shared secret).
+  await loadConversationKey(conversationId, 1);
+  if (cryptoManager.hasConversationKey(conversationId)) {
+    if (!trialTarget || (await trialDecryptMessage(trialTarget))) {
+      return true;
+    }
+  }
+
+  // 2. Chua co khoa / khoa sai -> derive tu setupAad (case nguoi NHAN). Chi commit khi giai ma duoc.
   clearConversationKey(conversationId, 1);
   const derived = await tryDeriveFromSetupAad(conversationId, setupAad, { force: true });
   if (!derived) return false;
-
-  const setupMessage = messages.find((m) => isE2eeSetupAad(m.envelope.aad));
-  const trialTarget =
-    setupMessage ??
-    messages.find((m) => m.envelope.keyVersion === 1);
   if (!trialTarget) return true;
 
-  const ok = await trialDecryptMessage(trialTarget);
-  if (!ok) {
-    clearConversationKey(conversationId, 1);
-    return false;
+  if (await trialDecryptMessage(trialTarget)) {
+    return true;
   }
-  return true;
+  clearConversationKey(conversationId, 1);
+  return false;
 }
 
 export type EnsureKeyResult = {
@@ -246,11 +255,6 @@ export async function decryptMessage(message: Message): Promise<Message> {
 
   const decrypted = await attemptDecrypt(message);
   if (decrypted) return decrypted;
-
-  clearConversationKey(conversationId, keyVersion);
-  await tryDeriveFromSetupAad(conversationId, envelope.aad, { force: true });
-  const retried = await attemptDecrypt(message);
-  if (retried) return retried;
 
   return message;
 }

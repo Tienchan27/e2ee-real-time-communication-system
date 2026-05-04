@@ -17,7 +17,6 @@ import { registerRoomHandlers, restoreConversationRooms } from "./socket/rooms.j
 import { CallStore } from "./stores/callStore.js";
 import { ConnectionStore } from "./stores/connectionStore.js";
 import { DedupeStore } from "./stores/dedupeStore.js";
-import { KeyRotationStore } from "./stores/keyRotationStore.js";
 import { NonceReplayStore } from "./stores/nonceReplayStore.js";
 import { PresenceSubscriptionStore } from "./stores/presenceSubscriptionStore.js";
 import { RoomSubscriptionStore } from "./stores/roomSubscriptionStore.js";
@@ -33,7 +32,6 @@ const messagePersistenceService = createMessagePersistenceService(config);
 const callPersistenceService = createCallPersistenceService(config);
 const dedupeStore = new DedupeStore();
 const nonceReplayStore = new NonceReplayStore();
-const keyRotationStore = new KeyRotationStore();
 const callStore = new CallStore(config.callInviteTimeoutMs);
 const roomSubscriptionStore = new RoomSubscriptionStore();
 const socketActivityStore = new SocketActivityStore(
@@ -80,7 +78,6 @@ const server = http.createServer(async (req: IncomingMessage, res: ServerRespons
       connections: connectionStore.getStats(),
       dedupe: dedupeStore.getStats(),
       replay: nonceReplayStore.getStats(),
-      keyRotation: keyRotationStore.getStats(),
       calls: callStore.getStats(),
       roomSubscriptions: roomSubscriptionStore.getStats(),
       socketActivity: socketActivityStore.getStats(),
@@ -136,7 +133,7 @@ io.on("connection", (socket) => {
   const auth = socket.data.auth;
   const presence = connectionStore.addSocket(socket.id, auth);
 
-  // Each socket joins a personal room so call:incoming can reach the user regardless of which chat they're viewing
+  // Personal room so call:incoming reaches the user on any screen.
   void socket.join(`user:${auth.userId}`);
 
   registerHeartbeatHandlers(socket, socketActivityStore);
@@ -150,7 +147,7 @@ io.on("connection", (socket) => {
     dedupeStore,
     nonceReplayStore,
   );
-  registerKeyHandlers(socket, conversationAccessService, keyRotationStore);
+  registerKeyHandlers(socket, conversationAccessService);
   registerCallHandlers(socket, conversationAccessService, callStore, callPersistenceService);
   registerReconnectHandlers(
     socket,

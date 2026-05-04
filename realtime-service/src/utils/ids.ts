@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 
 export function createUuidV7(): string {
-  // UUID v7 gom timestamp o phan dau, giup sap xep theo thoi gian tot hon UUID v4.
   const bytes = randomBytes(16);
   const timestamp = BigInt(Date.now());
 
@@ -12,7 +11,6 @@ export function createUuidV7(): string {
   bytes[4] = Number((timestamp >> 8n) & 0xffn);
   bytes[5] = Number(timestamp & 0xffn);
 
-  // Gan version 7 va RFC 4122 variant bits.
   bytes[6] = (bytes[6]! & 0x0f) | 0x70;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
 

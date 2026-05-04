@@ -5,12 +5,17 @@ export function registerHeartbeatHandlers(socket: Socket, activityStore: SocketA
   activityStore.touch(socket.id);
 
   socket.on("heartbeat:pong", () => {
-    // RT-25: Client co the pong chu dong; Socket.IO ping/pong van la lop thap hon.
     activityStore.touch(socket.id);
   });
 
   socket.onAny(() => {
-    // Bat ky event hop le nao cung chung minh socket con dang hoat dong.
+    activityStore.touch(socket.id);
+  });
+
+  // Engine.io ping/pong tang transport (moi pingInterval) cung tinh la "con song".
+  // Nho vay socket idle-nhung-con-ket-noi khong bao gio bi coi la stale; chi socket
+  // chet that (ngung gui packet) moi bi don dep (engine.io cung tu drop bang pingTimeout).
+  socket.conn.on("packet", () => {
     activityStore.touch(socket.id);
   });
 }
@@ -23,13 +28,8 @@ export function startHeartbeatCleanupInterval(
   const interval = setInterval(() => {
     for (const socketId of activityStore.findStaleSocketIds()) {
       const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.emit("heartbeat:ping", {
-          serverTimestamp: new Date().toISOString(),
-        });
-        // RT-25: Socket stale bi dong de cleanup mapping/presence qua disconnect handler.
-        socket.disconnect(true);
-      }
+      // Socket thuc su chet (khong con packet transport) -> dong va don.
+      socket?.disconnect(true);
       activityStore.remove(socketId);
     }
   }, intervalMs);

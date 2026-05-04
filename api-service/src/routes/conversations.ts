@@ -207,7 +207,7 @@ router.get("/", authRequired, async (req, res) => {
           lastMessagePreview: {
             messageId: row.message_id,
             senderUserId: row.sender_user_id,
-            // E2EE: server khong giai ma duoc; FE tu hien placeholder. Khong tra ciphertext.
+            // E2EE: server cannot decrypt; no ciphertext in preview.
             preview: null,
             sentAt: row.message_created_at?.toISOString(),
           },

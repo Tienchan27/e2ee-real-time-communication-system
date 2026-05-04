@@ -1,6 +1,4 @@
-/**
- * Simple UUID v4 generator for browser environment
- */
+/** Browser UUID v4 generator. */
 export function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -9,9 +7,6 @@ export function generateUUID(): string {
   });
 }
 
-/**
- * Generate a UUID and ensure it's typed correctly
- */
 export function generateUUIDTyped<T extends string = string>(): T {
   return generateUUID() as T;
 }

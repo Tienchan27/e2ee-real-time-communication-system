@@ -23,7 +23,6 @@ function isBase64(value: unknown): value is string {
     return false;
   }
 
-  // Kiem tra base64 o muc wire-format: server chi validate shape, khong giai ma plaintext.
   return /^[A-Za-z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0;
 }
 
@@ -68,8 +67,43 @@ function readChatSendPayload(payload: Record<string, unknown>): ChatSendPayload 
   };
 }
 
+type DeliveredPayload = {
+  conversationId: string;
+  messageId: string;
+};
+
+type ReadPayload = {
+  conversationId: string;
+  messageIds: string[];
+};
+
+function readDeliveredPayload(payload: Record<string, unknown>): DeliveredPayload {
+  if (!isUuid(payload.conversationId) || !isUuid(payload.messageId)) {
+    throw new Error("VALIDATION_FAILED");
+  }
+  return {
+    conversationId: payload.conversationId,
+    messageId: payload.messageId,
+  };
+}
+
+function readReadPayload(payload: Record<string, unknown>): ReadPayload {
+  if (
+    !isUuid(payload.conversationId) ||
+    !Array.isArray(payload.messageIds) ||
+    payload.messageIds.length === 0 ||
+    !payload.messageIds.every(isUuid)
+  ) {
+    throw new Error("VALIDATION_FAILED");
+  }
+  return {
+    conversationId: payload.conversationId,
+    messageIds: payload.messageIds as string[],
+  };
+}
+
 function replayDedupeResult(socket: Socket, requestId: string, result: DedupeResult) {
-  // Khi client retry cung requestId, server tra lai ket qua cu thay vi persist/fanout lan nua.
+  // Idempotent retry: replay cached result for the same requestId.
   if (result.type === "success") {
     emitAck(socket, requestId, {
       ...result.meta,
@@ -99,11 +133,9 @@ export function registerChatHandlers(
     const requestId = readRequestId(data);
 
     try {
-      // RT-07: Doc va validate dung contract chat:send trong docs/03-events.md.
       const event = readClientEvent(data, readChatSendPayload);
       const auth = socket.data.auth;
 
-      // RT-08: Khong tin senderUserId tu client; lay userId tu auth context cua socket.
       const canSend = await accessService.canJoinConversation(
         auth.userId,
         event.payload.conversationId,
@@ -151,7 +183,6 @@ export function registerChatHandlers(
           },
         };
 
-        // RT-14: Cung nonce trong cung device/conversation/keyVersion la dau hieu replay.
         emitError(
           socket,
           event.requestId,
@@ -165,7 +196,6 @@ export function registerChatHandlers(
       }
 
       try {
-        // RT-09: Goi API internal persist. Server chi gui ciphertext envelope, khong co plaintext.
         const persistResult = await persistenceService.persistMessage({
           requestId: event.requestId,
           messageId: event.payload.messageId,
@@ -190,10 +220,8 @@ export function registerChatHandlers(
           createdAt: persistResult.createdAt,
         };
 
-        // RT-10: Ack sender sau khi persist thanh cong de FE biet message da duoc server nhan.
         emitAck(socket, event.requestId, successMeta);
 
-        // RT-12: Fanout ciphertext cho cac socket khac trong conversation room.
         socket.to(conversationRoomName(event.payload.conversationId)).emit("chat:message", {
           messageId: event.payload.messageId,
           conversationId: event.payload.conversationId,
@@ -209,7 +237,6 @@ export function registerChatHandlers(
 
         nonceReplayStore.markUsed(nonceReplayKey);
 
-        // RT-13: Luu ket qua de retry cung requestId khong tao message/fanout trung.
         dedupeStore.set(dedupeKey, {
           type: "success",
           meta: successMeta,
@@ -227,7 +254,6 @@ export function registerChatHandlers(
           },
         };
 
-        // RT-11: Loi persist la loi co the retry, vi client co the gui lai cung requestId.
         emitError(
           socket,
           event.requestId,
@@ -249,6 +275,83 @@ export function registerChatHandlers(
         requestId,
         errorCode,
         "Invalid chat:send payload.",
+        false,
+      );
+    }
+  });
+
+  // Fanout receipts only; persistence is handled by the API via REST.
+  socket.on("chat:delivered", async (data: unknown) => {
+    const requestId = readRequestId(data);
+    try {
+      const event = readClientEvent(data, readDeliveredPayload);
+      const auth = socket.data.auth;
+      const canRoute = await accessService.canJoinConversation(
+        auth.userId,
+        event.payload.conversationId,
+      );
+      if (!canRoute) {
+        emitError(socket, event.requestId, "PERMISSION_DENIED", "Not a conversation member.");
+        return;
+      }
+
+      socket.to(conversationRoomName(event.payload.conversationId)).emit("message:receipt", {
+        conversationId: event.payload.conversationId,
+        messageIds: [event.payload.messageId],
+        userId: auth.userId,
+        status: "delivered",
+      });
+
+      emitAck(socket, event.requestId, {
+        conversationId: event.payload.conversationId,
+        status: "delivered",
+      });
+    } catch (error) {
+      emitError(
+        socket,
+        requestId,
+        error instanceof Error && error.message === "VALIDATION_FAILED"
+          ? "VALIDATION_FAILED"
+          : "INTERNAL_ERROR",
+        "Invalid chat:delivered payload.",
+        false,
+      );
+    }
+  });
+
+  socket.on("chat:read", async (data: unknown) => {
+    const requestId = readRequestId(data);
+    try {
+      const event = readClientEvent(data, readReadPayload);
+      const auth = socket.data.auth;
+      const canRoute = await accessService.canJoinConversation(
+        auth.userId,
+        event.payload.conversationId,
+      );
+      if (!canRoute) {
+        emitError(socket, event.requestId, "PERMISSION_DENIED", "Not a conversation member.");
+        return;
+      }
+
+      socket.to(conversationRoomName(event.payload.conversationId)).emit("message:receipt", {
+        conversationId: event.payload.conversationId,
+        messageIds: event.payload.messageIds,
+        userId: auth.userId,
+        status: "read",
+      });
+
+      emitAck(socket, event.requestId, {
+        conversationId: event.payload.conversationId,
+        status: "read",
+      });
+    } catch (error) {
+      emitError(
+        socket,
+        requestId,
+        error instanceof Error && error.message === "VALIDATION_FAILED"
+          ? "VALIDATION_FAILED"
+          : "INTERNAL_ERROR",
+        "Invalid chat:read payload.",
         false,
       );
     }

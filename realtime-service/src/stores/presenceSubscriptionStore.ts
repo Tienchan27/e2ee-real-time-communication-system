@@ -3,7 +3,6 @@ export class PresenceSubscriptionStore {
   private readonly subscriberSocketIdsByTargetUserId = new Map<string, Set<string>>();
 
   subscribe(socketId: string, targetUserIds: string[]) {
-    // Moi socket co the theo doi nhieu user de nhan online/offline update.
     const currentTargets = this.targetUserIdsBySocketId.get(socketId) ?? new Set<string>();
 
     for (const targetUserId of targetUserIds) {

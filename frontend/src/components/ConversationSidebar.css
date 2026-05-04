@@ -361,6 +361,17 @@
   margin-top: 2px;
 }
 
+/* Chua doc: in dam ten + preview (kieu Messenger) */
+.conversation-item.unread .conversation-name {
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.conversation-item.unread .conversation-preview {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 /* Right meta */
 .conversation-meta {
   display: flex;

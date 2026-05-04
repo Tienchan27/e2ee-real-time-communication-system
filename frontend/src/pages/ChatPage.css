@@ -99,22 +99,26 @@
 }
 
 .call-header-btn {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-full);
-  border: none;
-  background: var(--color-surface-2);
-  color: var(--color-text-secondary);
+  border: 1.5px solid var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
 }
 
 .call-header-btn:hover {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.call-header-btn:active {
+  transform: scale(0.92);
 }
 
 /* Messages area */
@@ -271,15 +275,29 @@
 .message-status.pending {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
 }
 
 .message-status.pending .send-spinner {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
+  border-color: var(--color-text-muted);
+  border-top-color: transparent;
 }
 
-.message-status.failed {
+/* Failed status is a button (tap to resend) */
+button.message-status.failed {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
   color: var(--color-danger, #e53935);
+}
+
+button.message-status.failed:hover {
+  text-decoration: underline;
 }
 
 .message-encrypted-placeholder {
@@ -377,6 +395,13 @@
 .info-message.waiting {
   color: var(--color-primary);
   border-left-color: var(--color-primary);
+  font-weight: 500;
+}
+
+.info-message.reconnecting {
+  background: var(--color-warning-bg, #fff3e0);
+  color: var(--color-warning-text, #e65100);
+  border-left-color: var(--color-warning, #fb8c00);
   font-weight: 500;
 }
 

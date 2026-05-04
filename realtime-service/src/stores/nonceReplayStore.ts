@@ -15,7 +15,6 @@ export class NonceReplayStore {
   constructor(private readonly ttlMs = 60 * 60 * 1000) {}
 
   createKey(input: NonceReplayInput): string {
-    // RT-14: Replay key dung dung contract: senderDeviceId + conversationId + nonce + keyVersion.
     return `${input.senderDeviceId}:${input.conversationId}:${input.nonce}:${input.keyVersion}`;
   }
 
@@ -34,7 +33,7 @@ export class NonceReplayStore {
   }
 
   markUsed(key: string) {
-    // Chi mark nonce sau khi persist thanh cong de retry loi mang khong bi chan sai.
+    // Mark only after persist succeeds so network retries are not blocked.
     this.cleanupExpired();
     this.entries.set(key, {
       expiresAtMs: Date.now() + this.ttlMs,

@@ -17,7 +17,6 @@ export class ConnectionStore {
   private readonly lastSeenByUserId = new Map<string, string>();
 
   addSocket(socketId: string, auth: AuthContext): PresenceStatus {
-    // Moi socket dai dien cho mot tab/browser/device dang online.
     const connectedAt = new Date().toISOString();
     const existingSockets = this.socketIdsByUserId.get(auth.userId) ?? new Set<string>();
 

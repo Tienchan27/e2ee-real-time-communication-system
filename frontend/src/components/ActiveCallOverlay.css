@@ -140,3 +140,90 @@
 .ctrl-btn.end-call:hover {
   background: var(--color-danger);
 }
+
+/* ===== Video call: fullscreen ===== */
+.active-call-overlay.video {
+  background: #000;
+}
+
+.active-call-overlay.video .active-call-content {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  position: relative;
+}
+
+.active-call-overlay.video .active-call-videos {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+/* Local camera: Picture-in-Picture goc tren phai */
+.active-call-overlay.video .local-video {
+  top: var(--space-4);
+  right: var(--space-4);
+  bottom: auto;
+  width: 160px;
+  height: 120px;
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+}
+
+/* Ten + thoi luong noi tren video */
+.video-call-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4) var(--space-5);
+  color: #fff;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
+  z-index: 1;
+}
+
+.video-call-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+
+.video-call-status {
+  font-size: var(--text-sm);
+  color: rgba(255, 255, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Controls + error noi tren video */
+.active-call-overlay.video .active-call-controls {
+  position: absolute;
+  bottom: var(--space-8);
+  left: 0;
+  right: 0;
+  justify-content: center;
+  z-index: 3;
+}
+
+.active-call-overlay.video .active-call-error {
+  position: absolute;
+  top: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  max-width: 90%;
+  z-index: 3;
+}
+
+@media (max-width: 600px) {
+  .active-call-overlay.video .local-video {
+    width: 110px;
+    height: 82px;
+  }
+}

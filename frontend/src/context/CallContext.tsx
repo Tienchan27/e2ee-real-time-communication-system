@@ -11,6 +11,7 @@ import { generateUUID } from "../utils/uuid.js";
 import { socketManager } from "../socket/manager.js";
 import { CallPeerConnection } from "../webrtc/peerConnection.js";
 import { ICE_CONNECTION_TIMEOUT_MS } from "../webrtc/config.js";
+import { startRingtone, stopRingtone } from "../utils/ringtone.js";
 import { useAuth } from "./AuthContext.js";
 
 export type CallPhase = "idle" | "incoming" | "outgoing" | "connecting" | "active" | "ending";
@@ -79,6 +80,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, [clearConnectTimer]);
 
   const teardown = useCallback(() => {
+    stopRingtone();
     clearConnectTimer();
     iceRestartAttemptedRef.current = false;
     acceptedRef.current = false;
@@ -436,6 +438,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       teardown();
     };
   }, [teardown]);
+
+  // Chuong theo trang thai cuoc goi: do chuong khi co cuoc den, ringback khi goi di.
+  useEffect(() => {
+    const phase = session?.phase;
+    if (phase === "incoming") {
+      startRingtone("incoming");
+    } else if (phase === "outgoing" || phase === "connecting") {
+      startRingtone("outgoing");
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [session?.phase]);
 
   const value: CallContextValue = {
     session,

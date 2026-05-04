@@ -5,8 +5,9 @@ export function createOptimisticMessage(
   clientTempId: UUID,
   sender: User,
   plaintext: string,
+  createdAt?: Timestamp,
 ): Message {
-  const now = new Date().toISOString() as Timestamp;
+  const ts = createdAt ?? (new Date().toISOString() as Timestamp);
   return {
     messageId: clientTempId,
     clientTempId,
@@ -26,7 +27,7 @@ export function createOptimisticMessage(
     outboundStatus: "pending_key",
     deliveredTo: [],
     readBy: [],
-    createdAt: now,
+    createdAt: ts,
   };
 }
 

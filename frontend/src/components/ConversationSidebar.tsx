@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import { useChat } from "../context/ChatContext.js";
+import { apiClient } from "../api/client.js";
 import type { UUID, UserSearchResult } from "../types/index.js";
 import "./ConversationSidebar.css";
 
@@ -66,7 +67,6 @@ export function ConversationSidebar({ activeConversationId }: ConversationSideba
       return;
     }
     try {
-      const { apiClient } = await import("../api/client.js");
       const result = await apiClient.searchUsers(query, 10);
       setSearchResults(result.results);
     } catch (err) {
@@ -78,7 +78,6 @@ export function ConversationSidebar({ activeConversationId }: ConversationSideba
     setSearchQuery("");
     setSearchResults([]);
     try {
-      const { apiClient } = await import("../api/client.js");
       const conversation = await apiClient.getOrCreateDirectConversation(selectedUser.userId);
       markConversationOpenedByMe(conversation.conversationId);
       await loadConversations();
@@ -233,7 +232,9 @@ export function ConversationSidebar({ activeConversationId }: ConversationSideba
             return (
               <button
                 key={conversation.conversationId}
-                className={`conversation-item${isActive ? " active" : ""}`}
+                className={`conversation-item${isActive ? " active" : ""}${
+                  conversation.unreadCount > 0 ? " unread" : ""
+                }`}
                 onClick={() => void handleConversationClick(conversation.conversationId)}
               >
                 <div className="conversation-avatar">

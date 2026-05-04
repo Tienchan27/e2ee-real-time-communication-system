@@ -66,9 +66,17 @@ export type PeerJoinedEvent = {
   deviceId: UUID;
 };
 
+export type MessageReceiptEvent = {
+  conversationId: UUID;
+  messageIds: UUID[];
+  userId: UUID;
+  status: "delivered" | "read";
+};
+
 type KeyExchangeInitListener = (event: KeyExchangeInitEvent) => void;
 type KeyExchangeResponseListener = (event: KeyExchangeResponseEvent) => void;
 type PeerJoinedListener = (event: PeerJoinedEvent) => void;
+type MessageReceiptListener = (event: MessageReceiptEvent) => void;
 
 export type ConversationCreatedEvent = {
   conversationId: UUID;
@@ -115,9 +123,15 @@ export class SocketManager {
     keyExchangeResponse: new Set<KeyExchangeResponseListener>(),
     peerJoined: new Set<PeerJoinedListener>(),
     conversationCreated: new Set<ConversationCreatedListener>(),
+    messageReceipt: new Set<MessageReceiptListener>(),
   };
 
   readonly pendingKeyExchanges: Map<string, PendingKeyExchange> = new Map();
+
+  private joinedConversations = new Set<UUID>();
+  private presenceTargets = new Set<UUID>();
+  private connectListeners = new Set<() => void>();
+  private disconnectListeners = new Set<() => void>();
 
   connect(accessToken: string): Promise<void> {
     if (this.socket?.connected) return Promise.resolve();
@@ -128,13 +142,13 @@ export class SocketManager {
       });
     }
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       this.socket = io(SOCKET_URL, {
         auth: { accessToken },
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: Infinity,
       });
 
       this.setupEventListeners();
@@ -142,19 +156,17 @@ export class SocketManager {
       this.socket.on("connect", () => {
         console.log("[Socket] Connected to realtime service");
         resolve();
+        this.resubscribe();
+        this.connectListeners.forEach((l) => l());
       });
 
       this.socket.on("connect_error", (error) => {
         console.warn("[Socket] Connection error (will retry):", error.message);
       });
 
-      this.socket.once("reconnect_failed", () => {
-        console.error("[Socket] All reconnection attempts failed");
-        reject(new Error("Cannot connect to realtime service. Please refresh the page."));
-      });
-
       this.socket.on("disconnect", (reason) => {
         console.log("[Socket] Disconnected:", reason);
+        this.disconnectListeners.forEach((l) => l());
       });
 
       this.socket.on("reconnect", (attempt) => {
@@ -164,6 +176,9 @@ export class SocketManager {
   }
 
   disconnect() {
+    this.joinedConversations.clear();
+    this.presenceTargets.clear();
+    this.pendingKeyExchanges.clear();
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -171,7 +186,10 @@ export class SocketManager {
   }
 
   reconnectWithToken(accessToken: string): Promise<void> {
-    this.disconnect();
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
     return this.connect(accessToken);
   }
 
@@ -181,6 +199,10 @@ export class SocketManager {
 
   private setupEventListeners() {
     if (!this.socket) return;
+
+    this.socket.on("heartbeat:ping", () => {
+      this.socket?.emit("heartbeat:pong");
+    });
 
     this.socket.on("presence:update", (presence: Presence) => {
       this.listeners.presenceUpdate.forEach((l) => l(presence));
@@ -297,6 +319,17 @@ export class SocketManager {
     this.socket.on("conversation:created", (payload: ConversationCreatedEvent) => {
       this.listeners.conversationCreated.forEach((l) => l(payload));
     });
+
+    this.socket.on("message:receipt", (payload: MessageReceiptEvent) => {
+      this.listeners.messageReceipt.forEach((l) => l(payload));
+    });
+  }
+
+  private resubscribe() {
+    const conversationIds = [...this.joinedConversations];
+    const presenceTargets = [...this.presenceTargets];
+    if (conversationIds.length === 0 && presenceTargets.length === 0) return;
+    this.emitEvent("realtime:resubscribe", { conversationIds, presenceTargets });
   }
 
   private emitEvent<T>(event: string, payload: T): UUID {
@@ -318,6 +351,7 @@ export class SocketManager {
   }
 
   joinConversation(conversationId: UUID): Promise<UUID> {
+    this.joinedConversations.add(conversationId);
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("conversation:join", { conversationId });
       console.log("[Socket] joinConversation emit, requestId:", requestId, "conv:", conversationId);
@@ -352,6 +386,7 @@ export class SocketManager {
   }
 
   leaveConversation(conversationId: UUID): Promise<UUID> {
+    this.joinedConversations.delete(conversationId);
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("conversation:leave", { conversationId });
 
@@ -382,6 +417,7 @@ export class SocketManager {
   }
 
   subscribePresence(targets: UUID[]): Promise<void> {
+    targets.forEach((id) => this.presenceTargets.add(id));
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("presence:subscribe", { targets });
       const onAck = (id: UUID) => {
@@ -484,6 +520,29 @@ export class SocketManager {
   onPeerJoined(listener: PeerJoinedListener): () => void {
     this.listeners.peerJoined.add(listener);
     return () => this.listeners.peerJoined.delete(listener);
+  }
+
+  onMessageReceipt(listener: MessageReceiptListener): () => void {
+    this.listeners.messageReceipt.add(listener);
+    return () => this.listeners.messageReceipt.delete(listener);
+  }
+
+  onConnect(listener: () => void): () => void {
+    this.connectListeners.add(listener);
+    if (this.socket?.connected) listener();
+    return () => this.connectListeners.delete(listener);
+  }
+
+  onDisconnect(listener: () => void): () => void {
+    this.disconnectListeners.add(listener);
+    return () => this.disconnectListeners.delete(listener);
+  }
+
+  // Cap nhat token cho lan auto-reconnect ke tiep (network blip) ma khong tao socket moi.
+  updateAuthToken(accessToken: string): void {
+    if (this.socket) {
+      this.socket.auth = { accessToken };
+    }
   }
 
   getPendingExchangeForConversation(conversationId: UUID): { sessionProposalId: UUID } | null {

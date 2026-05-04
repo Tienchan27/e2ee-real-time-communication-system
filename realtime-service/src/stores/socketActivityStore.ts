@@ -4,7 +4,6 @@ export class SocketActivityStore {
   constructor(private readonly staleAfterMs = 90 * 1000) {}
 
   touch(socketId: string) {
-    // RT-25: Cap nhat moi lan socket co tin hieu song de phat hien stale socket.
     this.lastSeenBySocketId.set(socketId, Date.now());
   }
 

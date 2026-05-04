@@ -4,6 +4,7 @@ import { apiClient } from "../api/client.js";
 import { uploadDevicePublicKeyWithRetry } from "../crypto/deviceKey.js";
 import { setActiveCryptoUserId } from "../crypto/conversationKeys.js";
 import { socketManager } from "../socket/manager.js";
+import { getJwtClaim } from "../utils/jwt.js";
 
 interface AuthContextValue extends AuthContextType {
   login: (identifier: string, password: string) => Promise<void>;
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [prekeyUploadFailed, setPrekeyUploadFailed] = useState(false);
   const prekeyUploadedForSessionRef = useRef<string | null>(null);
+  const refreshInFlightRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     const storedAccessToken = localStorage.getItem(STORAGE_KEY_ACCESS_TOKEN);
@@ -100,23 +102,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    apiClient.setRefreshHandler(async () => {
-      try {
-        const response = await apiClient.refreshToken(refreshToken);
-        setAccessToken(response.accessToken);
-        setRefreshToken(response.refreshToken);
-        socketManager.reconnectWithToken(response.accessToken).catch((err) =>
-          console.error("[Auth] Failed to reconnect socket with refreshed token:", err),
-        );
-        return response.accessToken;
-      } catch {
-        setUser(null);
-        setAccessToken(null);
-        setRefreshToken(null);
-        socketManager.disconnect();
-        throw new Error("Session expired. Please log in again.");
-      }
-    });
+    // Refresh dung chung cho ca 401-path lan refresh chu dong; in-flight guard tranh
+    // refresh kep (refresh token dung 1 lan -> refresh kep se bi replay-reject).
+    const doRefresh = (forceReconnect: boolean): Promise<string> => {
+      if (refreshInFlightRef.current) return refreshInFlightRef.current;
+      const p = (async () => {
+        try {
+          const response = await apiClient.refreshToken(refreshToken);
+          setAccessToken(response.accessToken);
+          setRefreshToken(response.refreshToken);
+          // Token moi cho lan auto-reconnect ke tiep; chi force reconnect o 401-path.
+          socketManager.updateAuthToken(response.accessToken);
+          if (forceReconnect) {
+            socketManager.reconnectWithToken(response.accessToken).catch((err) =>
+              console.error("[Auth] Failed to reconnect socket with refreshed token:", err),
+            );
+          }
+          return response.accessToken;
+        } catch {
+          setUser(null);
+          setAccessToken(null);
+          setRefreshToken(null);
+          socketManager.disconnect();
+          throw new Error("Session expired. Please log in again.");
+        } finally {
+          refreshInFlightRef.current = null;
+        }
+      })();
+      refreshInFlightRef.current = p;
+      return p;
+    };
+
+    apiClient.setRefreshHandler(() => doRefresh(true));
 
     setActiveCryptoUserId(user.userId);
 
@@ -129,6 +146,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     socketManager.connect(accessToken).catch((err) =>
       console.error("[Auth] Failed to connect socket:", err),
     );
+
+    // Refresh chu dong ~60s truoc khi access token het han -> token + socket luon tuoi,
+    // khong dinh 401 dau tien khi idle dai (khong can blip reconnect).
+    const expSec = getJwtClaim(accessToken, "exp") as number | undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    if (typeof expSec === "number") {
+      const msUntilRefresh = expSec * 1000 - Date.now() - 60_000;
+      refreshTimer = setTimeout(() => {
+        void doRefresh(false).catch(() => undefined);
+      }, Math.max(msUntilRefresh, 1_000));
+    }
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
   }, [accessToken, refreshToken, user]);
 
   const login = useCallback(async (identifier: string, password: string) => {

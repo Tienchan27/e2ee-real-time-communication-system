@@ -45,8 +45,7 @@ import {
   truncatePreview,
 } from "../chat/conversationList.js";
 import { createOptimisticMessage, withOutboundStatus } from "../chat/optimisticMessage.js";
-
-type PendingQueueEntry = { clientTempId: UUID; plaintext: string };
+import { loadOutbox, saveOutbox, type PendingQueueEntry } from "../chat/outbox.js";
 
 interface ChatContextValue {
   conversations: Map<UUID, Conversation>;
@@ -60,21 +59,11 @@ interface ChatContextValue {
   loadConversations: () => Promise<void>;
   loadMessages: (conversationId: UUID) => Promise<void>;
   sendMessage: (conversationId: UUID, plaintext: string) => Promise<void>;
+  retryMessage: (conversationId: UUID, clientTempId: UUID) => Promise<void>;
   subscribeToPresence: (userIds: UUID[]) => Promise<void>;
   markConversationOpenedByMe: (conversationId: UUID) => void;
   getConversationPreview: (conversationId: UUID) => { preview?: string; sentAt?: Timestamp };
   keyReadyConversations: Set<UUID>;
-}
-
-const KEY_EXCHANGE_WAIT_MS = 10_000;
-
-function conversationHasSuccessfulSend(
-  conversationId: UUID,
-  userId: UUID,
-  messagesByConversation: Map<UUID, Message[]>,
-): boolean {
-  const msgs = messagesByConversation.get(conversationId) ?? [];
-  return msgs.some((m) => m.senderUserId === userId && m.outboundStatus === "sent");
 }
 
 function markOptimisticSendFailed(
@@ -89,15 +78,6 @@ function markOptimisticSendFailed(
       withOutboundStatus(m, "failed"),
     ),
   });
-}
-
-async function waitForConversationKey(conversationId: UUID, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (hasConversationKey(conversationId)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  return hasConversationKey(conversationId);
 }
 
 export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -124,6 +104,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pendingSetupAadRef = useRef<Map<UUID, E2eeSetupAad>>(new Map());
   const exchangeInProgressRef = useRef<Set<UUID>>(new Set());
   const conversationLocalMetaRef = useRef<Map<UUID, ConversationLocalMeta>>(conversationLocalMeta);
+  const currentConversationIdRef = useRef<UUID | null>(currentConversationId);
 
   useEffect(() => {
     configureGliteKeyGate((conversationId) => messagesRef.current.get(conversationId));
@@ -147,6 +128,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     conversationLocalMetaRef.current = conversationLocalMeta;
   }, [conversationLocalMeta]);
+  useEffect(() => {
+    currentConversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
+
+  // Tab title kieu Messenger: "(N) E2EE Chat" khi co tin chua doc.
+  useEffect(() => {
+    let total = 0;
+    for (const conv of conversations.values()) total += conv.unreadCount;
+    document.title = total > 0 ? `(${total}) E2EE Chat` : "E2EE Chat";
+  }, [conversations]);
+
+  const adjustUnread = useCallback((conversationId: UUID, delta: number | "reset") => {
+    setConversations((prev) => {
+      const conv = prev.get(conversationId);
+      if (!conv) return prev;
+      const nextCount = delta === "reset" ? 0 : Math.max(0, conv.unreadCount + delta);
+      if (nextCount === conv.unreadCount) return prev;
+      return new Map(prev).set(conversationId, { ...conv, unreadCount: nextCount });
+    });
+  }, []);
 
   const commitConversation = useCallback(
     (conversationId: UUID, patch: { messages?: Message[]; calls?: CallLog[] }) => {
@@ -216,10 +217,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const refreshConversationDecryption = useCallback(
     (conversationId: UUID) => {
       const existing = messagesRef.current.get(conversationId) || [];
-      void Promise.all(existing.map(decryptMessageWithKeys)).then((decrypted) => {
+      void (async () => {
+        // Sequential decrypt: shared in-memory key slot is not concurrency-safe.
+        const decrypted: Message[] = [];
+        for (const m of existing) {
+          decrypted.push(await decryptMessageWithKeys(m));
+        }
         commitConversation(conversationId, { messages: decrypted });
         syncPreviewFromMessages(conversationId, decrypted);
-      });
+      })();
     },
     [commitConversation, syncPreviewFromMessages],
   );
@@ -236,6 +242,41 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }),
     [refreshConversationDecryption, markKeyReady],
   );
+
+  const persistOutbox = useCallback(() => {
+    if (!user) return;
+    saveOutbox(user.userId, pendingQueueRef.current);
+  }, [user]);
+
+  const ensureSocketKeyExchange = useCallback(
+    (conversationId: UUID) => {
+      if (!shouldAllowSocketKeyExchange(conversationId)) return;
+      if (hasConversationKey(conversationId)) return;
+      if (socketManager.getPendingExchangeForConversation(conversationId)) return;
+      if (exchangeInProgressRef.current.has(conversationId)) return;
+      exchangeInProgressRef.current.add(conversationId);
+      socketKeyExchange
+        .initiateKeyExchange(conversationId)
+        .catch((err) => console.warn("[KeyExchange] establish failed:", err))
+        .finally(() => exchangeInProgressRef.current.delete(conversationId));
+    },
+    [socketKeyExchange],
+  );
+
+  const processOutbox = useCallback(async () => {
+    for (const conversationId of pendingQueueRef.current.keys()) {
+      if (hasConversationKey(conversationId)) {
+        markKeyReady(conversationId);
+        continue;
+      }
+      try {
+        await socketManager.joinConversation(conversationId);
+      } catch (err) {
+        console.warn("[Outbox] join failed:", err);
+      }
+      ensureSocketKeyExchange(conversationId);
+    }
+  }, [markKeyReady, ensureSocketKeyExchange]);
 
   const decryptMessage = useCallback(
     (message: Message) => decryptMessageWithKeys(message),
@@ -263,7 +304,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const clientMessageSeq = currentSeq + 1;
         messageSeqRef.current.set(conversationId, clientMessageSeq);
 
-        const encrypted = await cryptoManager.encrypt(conversationId, plaintext, 1);
+        const keyVersion = 1;
+        const wireAadToSend = wireAad ? { ...wireAad } : undefined;
+
+        const encrypted = await cryptoManager.encrypt(conversationId, plaintext, keyVersion);
         const messageId = generateUUID() as UUID;
 
         await socketManager.sendMessage({
@@ -272,9 +316,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ciphertext: encrypted.ciphertext,
           nonce: encrypted.nonce,
           algorithm: "aes-256-gcm",
-          keyVersion: 1,
+          keyVersion,
           clientMessageSeq,
-          ...(wireAad ? { aad: wireAad } : {}),
+          ...(wireAadToSend ? { aad: wireAadToSend } : {}),
         });
 
         const sentMessage: Message = {
@@ -289,9 +333,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             ciphertext: encrypted.ciphertext,
             nonce: encrypted.nonce,
             algorithm: "aes-256-gcm",
-            keyVersion: 1,
+            keyVersion,
             clientMessageSeq,
-            ...(wireAad ? { aad: wireAad } : {}),
+            ...(wireAadToSend ? { aad: wireAadToSend } : {}),
           },
           plaintext,
           outboundStatus: "sent",
@@ -301,14 +345,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         };
 
         const current = messagesRef.current.get(conversationId) ?? [];
+        const exists = current.some(
+          (m) => m.clientTempId === clientTempId || m.messageId === clientTempId,
+        );
         commitConversation(conversationId, {
-          messages: patchMessageInConversation(current, clientTempId, () => sentMessage),
+          messages: exists
+            ? patchMessageInConversation(current, clientTempId, () => sentMessage)
+            : [...current, sentMessage],
         });
         patchConversationMeta(conversationId, {
           hasLocalActivity: true,
           lastPreview: truncatePreview(plaintext),
           lastActivityAt: sentMessage.createdAt,
         });
+
       } catch (err) {
         const current = messagesRef.current.get(conversationId) ?? [];
         commitConversation(conversationId, {
@@ -327,18 +377,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const queue = pendingQueueRef.current.get(conversationId);
       if (!queue?.length) return;
       pendingQueueRef.current.delete(conversationId);
+      persistOutbox();
       const setupAad = pendingSetupAadRef.current.get(conversationId);
       for (let i = 0; i < queue.length; i += 1) {
         const entry = queue[i]!;
         const wireAad =
           i === 0 && setupAad ? ({ ...setupAad } as Record<string, unknown>) : undefined;
-        await doActualSend(conversationId, entry.plaintext, entry.clientTempId, wireAad);
+        try {
+          await doActualSend(conversationId, entry.plaintext, entry.clientTempId, wireAad);
+        } catch (err) {
+          console.error("[Queue] send failed for queued message:", err);
+        }
       }
       if (setupAad) {
         pendingSetupAadRef.current.delete(conversationId);
       }
     },
-    [doActualSend],
+    [doActualSend, persistOutbox],
   );
 
   useEffect(() => {
@@ -352,9 +407,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [keyReadyConversations, flushPendingQueue]);
 
   const appendOptimisticMessage = useCallback(
-    (conversationId: UUID, clientTempId: UUID, plaintext: string) => {
+    (conversationId: UUID, clientTempId: UUID, plaintext: string, createdAt?: Timestamp) => {
       if (!user) return;
-      const optimistic = createOptimisticMessage(conversationId, clientTempId, user, plaintext);
+      const optimistic = createOptimisticMessage(
+        conversationId,
+        clientTempId,
+        user,
+        plaintext,
+        createdAt,
+      );
       const existing = messagesRef.current.get(conversationId) ?? [];
       commitConversation(conversationId, { messages: [...existing, optimistic] });
       patchConversationMeta(conversationId, {
@@ -381,6 +442,41 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to load conversations:", err);
     }
   }, [user, accessToken]);
+
+  // Load outbox before onConnect registers processOutbox.
+  useEffect(() => {
+    if (!user) return;
+    const restored = loadOutbox(user.userId);
+    if (restored.size === 0) return;
+    pendingQueueRef.current = restored;
+    for (const [conversationId, entries] of restored) {
+      const existing = messagesRef.current.get(conversationId) ?? [];
+      const known = new Set(existing.map((m) => m.clientTempId ?? m.messageId));
+      const optimistic = entries
+        .filter((e) => !known.has(e.clientTempId))
+        .map((e) =>
+          createOptimisticMessage(conversationId, e.clientTempId, user, e.plaintext, e.createdAt),
+        );
+      if (optimistic.length > 0) {
+        commitConversation(conversationId, { messages: [...existing, ...optimistic] });
+      }
+      const last = entries[entries.length - 1];
+      if (last) {
+        patchConversationMeta(conversationId, {
+          hasLocalActivity: true,
+          lastPreview: truncatePreview(last.plaintext),
+          lastActivityAt: last.createdAt,
+        });
+      }
+    }
+  }, [user, commitConversation, patchConversationMeta]);
+
+  useEffect(() => {
+    if (!user) return;
+    return socketManager.onConnect(() => {
+      void processOutbox();
+    });
+  }, [user, processOutbox]);
 
   useEffect(() => {
     if (!user || !accessToken) return;
@@ -417,12 +513,40 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (user && decrypted.senderUserId !== user.userId) {
-        void loadConversations();
         void apiClient
           .markMessageDelivered(decrypted.messageId, new Date().toISOString())
           .catch(() => undefined);
         socketManager.markDelivered(message.conversationId, decrypted.messageId);
+
+        if (currentConversationIdRef.current === message.conversationId) {
+          const readAt = new Date().toISOString();
+          void apiClient
+            .markConversationRead(message.conversationId, decrypted.messageId, readAt)
+            .catch(() => undefined);
+          socketManager.markRead(message.conversationId, [decrypted.messageId]);
+        } else {
+          adjustUnread(message.conversationId, 1);
+        }
       }
+    });
+
+    const unsubReceipt = socketManager.onMessageReceipt((evt) => {
+      const existing = messagesRef.current.get(evt.conversationId);
+      if (!existing) return;
+      const targetIds = new Set(evt.messageIds);
+      const updated = existing.map((m) => {
+        if (!targetIds.has(m.messageId)) return m;
+        if (evt.status === "delivered") {
+          if (m.deliveredTo.includes(evt.userId)) return m;
+          return { ...m, deliveredTo: [...m.deliveredTo, evt.userId] };
+        }
+        const deliveredTo = m.deliveredTo.includes(evt.userId)
+          ? m.deliveredTo
+          : [...m.deliveredTo, evt.userId];
+        const readBy = m.readBy.includes(evt.userId) ? m.readBy : [...m.readBy, evt.userId];
+        return { ...m, deliveredTo, readBy };
+      });
+      commitConversation(evt.conversationId, { messages: updated });
     });
 
     const unsubKeyInit = socketManager.onKeyExchangeInit(
@@ -430,19 +554,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
 
     const unsubPeerJoined = socketManager.onPeerJoined((event) => {
-      const convId = event.conversationId as UUID;
-      if (!shouldAllowSocketKeyExchange(convId)) return;
-      if (
-        !hasConversationKey(convId) &&
-        !socketManager.getPendingExchangeForConversation(convId) &&
-        !exchangeInProgressRef.current.has(convId)
-      ) {
-        exchangeInProgressRef.current.add(convId);
-        socketKeyExchange
-          .initiateKeyExchange(convId)
-          .catch((err) => console.error("[KeyExchange] peer_joined re-trigger failed:", err))
-          .finally(() => exchangeInProgressRef.current.delete(convId));
-      }
+      ensureSocketKeyExchange(event.conversationId as UUID);
     });
 
     const unsubCallLogged = socketManager.onCallLogged((call) => {
@@ -463,6 +575,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubPresence();
       unsubMessage();
+      unsubReceipt();
       unsubKeyInit();
       unsubPeerJoined();
       unsubCallLogged();
@@ -473,15 +586,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     accessToken,
     decryptMessage,
     socketKeyExchange,
+    ensureSocketKeyExchange,
     loadConversations,
     commitConversation,
     patchConversationMeta,
+    adjustUnread,
+    markKeyReady,
   ]);
 
   const loadMessages = useCallback(
     async (conversationId: UUID) => {
       if (!user) return;
       try {
+        // Join in parallel with fetch to avoid missing live messages mid-load.
+        const joinPromise = socketManager
+          .joinConversation(conversationId)
+          .catch((err) => console.warn("[Chat] joinConversation failed:", err));
+
         const [messageResult, callResult] = await Promise.all([
           apiClient.getMessages(conversationId, 50),
           apiClient.getCalls(conversationId, 50),
@@ -506,24 +627,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           markKeyReady(conversationId);
         }
 
-        let decrypted = await Promise.all(messageResult.messages.map(decryptMessage));
-        if (decrypted.some((m) => !m.plaintext)) {
-          decrypted = await Promise.all(decrypted.map(decryptMessage));
+        const decrypted: Message[] = [];
+        for (const m of messageResult.messages) {
+          decrypted.push(await decryptMessage(m));
         }
-        for (const m of decrypted) {
-          if (isE2eeSetupAad(m.envelope.aad) && m.plaintext) {
-            markGliteConversation(conversationId);
-            break;
-          }
-        }
+
+        // Re-merge pending outbox entries after server load.
+        const pending = pendingQueueRef.current.get(conversationId) ?? [];
+        const serverIds = new Set(decrypted.map((m) => m.messageId));
+        const pendingMsgs = pending
+          .filter((e) => !serverIds.has(e.clientTempId))
+          .map((e) =>
+            createOptimisticMessage(conversationId, e.clientTempId, user, e.plaintext, e.createdAt),
+          );
+        const merged = pendingMsgs.length > 0 ? [...decrypted, ...pendingMsgs] : decrypted;
 
         commitConversation(conversationId, {
-          messages: decrypted,
+          messages: merged,
           calls: callResult.calls,
         });
-        syncPreviewFromMessages(conversationId, decrypted);
+        syncPreviewFromMessages(conversationId, merged);
+        adjustUnread(conversationId, "reset");
 
-        await socketManager.joinConversation(conversationId);
+        await joinPromise;
+
+        if (pending.length > 0 && !hasConversationKey(conversationId)) {
+          ensureSocketKeyExchange(conversationId);
+        }
 
         const lastFromPeer = [...decrypted].reverse().find((m) => m.senderUserId !== user.userId);
         if (lastFromPeer) {
@@ -537,7 +667,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         console.error("Failed to load messages:", err);
       }
     },
-    [user, decryptMessage, markKeyReady, commitConversation, syncPreviewFromMessages],
+    [
+      user,
+      decryptMessage,
+      markKeyReady,
+      commitConversation,
+      syncPreviewFromMessages,
+      adjustUnread,
+      ensureSocketKeyExchange,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -551,15 +689,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
 
       const clientTempId = generateUUID() as UUID;
-      appendOptimisticMessage(conversationId, clientTempId, plaintext);
+      const createdAt = new Date().toISOString() as Timestamp;
+      appendOptimisticMessage(conversationId, clientTempId, plaintext, createdAt);
 
       const deviceId = getJwtClaim(accessToken, "deviceId") as UUID | undefined;
       if (!deviceId) {
+        markOptimisticSendFailed(
+          conversationId,
+          clientTempId,
+          messagesRef.current,
+          commitConversation,
+        );
         throw new Error("Phiên đăng nhập không hợp lệ (thiếu deviceId).");
       }
 
-      if (!conversationHasSuccessfulSend(conversationId, user.userId, messagesRef.current)) {
-        clearConversationKey(conversationId, 1);
+      if (!hasConversationKey(conversationId)) {
+        // Reuse G-lite key from history before minting a new one.
+        await ensureKeyFromGliteHistory(
+          conversationId,
+          messagesRef.current.get(conversationId) ?? [],
+        );
       }
 
       let setupAad: Awaited<ReturnType<typeof ensureKeyForSend>>["setupAad"];
@@ -572,21 +721,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         if (err instanceof PeerPrekeyMissingError) {
-          if (
-            shouldAllowSocketKeyExchange(conversationId) &&
-            !socketManager.getPendingExchangeForConversation(conversationId) &&
-            !exchangeInProgressRef.current.has(conversationId)
-          ) {
-            exchangeInProgressRef.current.add(conversationId);
-            try {
-              await socketKeyExchange.initiateKeyExchange(conversationId);
-            } catch (exchangeErr) {
-              console.warn("[KeyExchange] fallback on send failed:", exchangeErr);
-            } finally {
-              exchangeInProgressRef.current.delete(conversationId);
-            }
-          }
-          await waitForConversationKey(conversationId, KEY_EXCHANGE_WAIT_MS);
+          ensureSocketKeyExchange(conversationId);
         } else {
           markOptimisticSendFailed(
             conversationId,
@@ -599,15 +734,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!hasConversationKey(conversationId)) {
-        markOptimisticSendFailed(
-          conversationId,
-          clientTempId,
-          messagesRef.current,
-          commitConversation,
-        );
-        throw new Error(
-          "Không thể thiết lập mã hóa — đối phương chưa có khóa mã hóa (nhờ họ đăng nhập app một lần) hoặc đang offline.",
-        );
+        const queue = pendingQueueRef.current.get(conversationId) ?? [];
+        queue.push({ clientTempId, plaintext, createdAt });
+        pendingQueueRef.current.set(conversationId, queue);
+        persistOutbox();
+        return;
       }
 
       markKeyReady(conversationId);
@@ -622,13 +753,42 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [
       user,
       accessToken,
-      socketKeyExchange,
+      ensureSocketKeyExchange,
       markKeyReady,
       doActualSend,
       flushPendingQueue,
       appendOptimisticMessage,
       commitConversation,
+      persistOutbox,
     ],
+  );
+
+  const retryMessage = useCallback(
+    async (conversationId: UUID, clientTempId: UUID) => {
+      const msgs = messagesRef.current.get(conversationId) ?? [];
+      const target = msgs.find((m) => (m.clientTempId ?? m.messageId) === clientTempId);
+      if (!target?.plaintext) return;
+
+      if (!hasConversationKey(conversationId)) {
+        // Chua co khoa -> dua lai vao hang doi, hien "dang cho", thu thiet lap khoa.
+        const queue = pendingQueueRef.current.get(conversationId) ?? [];
+        if (!queue.some((e) => e.clientTempId === clientTempId)) {
+          queue.push({ clientTempId, plaintext: target.plaintext, createdAt: target.createdAt });
+          pendingQueueRef.current.set(conversationId, queue);
+          persistOutbox();
+        }
+        commitConversation(conversationId, {
+          messages: patchMessageInConversation(msgs, clientTempId, (m) =>
+            withOutboundStatus(m, "pending_key"),
+          ),
+        });
+        ensureSocketKeyExchange(conversationId);
+        return;
+      }
+
+      await doActualSend(conversationId, target.plaintext, clientTempId);
+    },
+    [doActualSend, persistOutbox, ensureSocketKeyExchange, commitConversation],
   );
 
   const subscribeToPresence = useCallback(async (userIds: UUID[]) => {
@@ -654,6 +814,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     loadConversations,
     loadMessages,
     sendMessage,
+    retryMessage,
     subscribeToPresence,
     markConversationOpenedByMe,
     getConversationPreview,

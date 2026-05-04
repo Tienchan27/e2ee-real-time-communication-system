@@ -1,6 +1,5 @@
 import type { Socket } from "socket.io";
 import type { ConversationAccessService } from "../services/conversationAccess.js";
-import type { KeyRotationStore } from "../stores/keyRotationStore.js";
 import { isObject, isUuid, readClientEvent, readRequestId } from "./events.js";
 import { conversationRoomName } from "./rooms.js";
 import { emitAck, emitError } from "./system.js";
@@ -17,13 +16,6 @@ type KeyExchangeResponsePayload = {
   sessionProposalId: string;
   publicKey: string;
   accepted: boolean;
-};
-
-type KeyRotatePayload = {
-  conversationId: string;
-  newKeyVersion: number;
-  reason: "message_count" | "time_window" | "manual";
-  senderEphemeralPublicKey: string;
 };
 
 type KeyRekeyRequiredPayload = {
@@ -47,7 +39,6 @@ function isBase64(value: unknown): value is string {
     return false;
   }
 
-  // Public key tren wire la base64; realtime chi validate format, khong tinh shared secret.
   return /^[A-Za-z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0;
 }
 
@@ -93,26 +84,6 @@ function readKeyExchangeResponsePayload(
   };
 }
 
-function readKeyRotatePayload(payload: Record<string, unknown>): KeyRotatePayload {
-  if (
-    !isUuid(payload.conversationId) ||
-    !isPositiveInteger(payload.newKeyVersion) ||
-    !isBase64(payload.senderEphemeralPublicKey) ||
-    (payload.reason !== "message_count" &&
-      payload.reason !== "time_window" &&
-      payload.reason !== "manual")
-  ) {
-    throw new Error("VALIDATION_FAILED");
-  }
-
-  return {
-    conversationId: payload.conversationId,
-    newKeyVersion: payload.newKeyVersion,
-    reason: payload.reason,
-    senderEphemeralPublicKey: payload.senderEphemeralPublicKey,
-  };
-}
-
 function readKeyRekeyRequiredPayload(payload: Record<string, unknown>): KeyRekeyRequiredPayload {
   if (
     !isUuid(payload.conversationId) ||
@@ -152,7 +123,6 @@ async function routeKeyEvent<TPayload extends { conversationId: string }>({
       return;
     }
 
-    // RT-15/16/19: Realtime chi relay key metadata/public key sang peer trong room conversation.
     socket.to(conversationRoomName(event.payload.conversationId)).emit(eventName, {
       ...event.payload,
       senderUserId: auth.userId,
@@ -180,7 +150,6 @@ async function routeKeyEvent<TPayload extends { conversationId: string }>({
 export function registerKeyHandlers(
   socket: Socket,
   accessService: ConversationAccessService,
-  keyRotationStore: KeyRotationStore,
 ) {
   socket.on("key:exchange:init", (data: unknown) =>
     routeKeyEvent({
@@ -201,70 +170,6 @@ export function registerKeyHandlers(
       readPayload: readKeyExchangeResponsePayload,
     }),
   );
-
-  socket.on("key:rotate", async (data: unknown) => {
-    const requestId = readRequestId(data);
-
-    try {
-      const event = readClientEvent(data, readKeyRotatePayload);
-      const auth = socket.data.auth;
-      const canRoute = await accessService.canJoinConversation(auth.userId, event.payload.conversationId);
-
-      if (!canRoute) {
-        emitError(socket, event.requestId, "PERMISSION_DENIED", "You are not allowed to rotate key here.");
-        return;
-      }
-
-      const decision = keyRotationStore.decide({
-        conversationId: event.payload.conversationId,
-        senderUserId: auth.userId,
-        senderDeviceId: auth.deviceId,
-        newKeyVersion: event.payload.newKeyVersion,
-        requestId: event.requestId,
-        createdAt: new Date().toISOString(),
-      });
-
-      if (!decision.accepted) {
-        // RT-18: Candidate thua tie-break thi khong route tiep, chi ack de client sync theo winner.
-        emitAck(socket, event.requestId, {
-          accepted: false,
-          reason: "ROTATE_TIE_BREAK_LOST",
-          winnerUserId: decision.winner.senderUserId,
-          winnerKeyVersion: decision.winner.newKeyVersion,
-        });
-        return;
-      }
-
-      // RT-17/18: Candidate thang duoc route sang peer, peer se derive key moi o client.
-      socket.to(conversationRoomName(event.payload.conversationId)).emit("key:rotate", {
-        ...event.payload,
-        senderUserId: auth.userId,
-        senderDeviceId: auth.deviceId,
-      });
-
-      emitAck(socket, event.requestId, {
-        accepted: true,
-        conversationId: event.payload.conversationId,
-        newKeyVersion: event.payload.newKeyVersion,
-        ...(decision.previousWinner
-          ? {
-              replacedWinnerUserId: decision.previousWinner.senderUserId,
-              replacedWinnerKeyVersion: decision.previousWinner.newKeyVersion,
-            }
-          : {}),
-      });
-    } catch (error) {
-      emitError(
-        socket,
-        requestId,
-        error instanceof Error && error.message === "VALIDATION_FAILED"
-          ? "VALIDATION_FAILED"
-          : "INTERNAL_ERROR",
-        "Failed to route key:rotate.",
-        false,
-      );
-    }
-  });
 
   socket.on("key:rekey_required", (data: unknown) =>
     routeKeyEvent({

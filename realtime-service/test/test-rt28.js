@@ -18,7 +18,6 @@ const users = {
 };
 
 function createUuidV7() {
-  // Tao UUID v7 don gian de test requestId va callId.
   const bytes = randomBytes(16);
   const timestamp = BigInt(Date.now());
 
@@ -42,7 +41,6 @@ function createUuidV7() {
 }
 
 function createDevToken({ userId, deviceId, sessionId }) {
-  // Dev token chi dung local vi realtime-service dang bat allowDevSocketAuth.
   return `dev:${userId}:${deviceId}:${sessionId}`;
 }
 
@@ -198,7 +196,7 @@ async function main() {
     await sleep(300);
 
     socketB = await connectClient("B-after-reconnect", users.b);
-    // Khong goi conversation:join lai. RT-24 phai restore room tu memory theo userId + deviceId.
+    // Room restored from memory without calling conversation:join again.
     await sleep(500);
 
     const offerPromise = waitForEvent(socketB, "call:offer");

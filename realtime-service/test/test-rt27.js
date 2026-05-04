@@ -14,7 +14,6 @@ const sessionBId = "018f0000-0000-7000-8000-0000000000b3";
 const conversationId = "018f0000-0000-7000-8000-00000000c001";
 
 function createUuidV7() {
-  // Tao UUID v7 don gian cho requestId/messageId trong test.
   const bytes = randomBytes(16);
   const timestamp = BigInt(Date.now());
 
@@ -38,7 +37,6 @@ function createUuidV7() {
 }
 
 function createDevToken(userId, deviceId, sessionId) {
-  // Dev token chi dung local vi realtime-service dang bat allowDevSocketAuth.
   return `dev:${userId}:${deviceId}:${sessionId}`;
 }
 

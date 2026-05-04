@@ -60,7 +60,6 @@ export function registerReconnectHandlers(
       if (event.payload.presenceTargets.length > 0) {
         presenceSubscriptionStore.subscribe(socket.id, event.payload.presenceTargets);
 
-        // RT-24: Sau reconnect, gui lai snapshot presence hien tai cho FE resync UI.
         for (const targetUserId of event.payload.presenceTargets) {
           socket.emit("presence:update", connectionStore.getPresence(targetUserId));
         }

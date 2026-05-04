@@ -17,7 +17,6 @@ export function createConversationAccessService(config: AppConfig): Conversation
   return {
     async canJoinConversation(userId, conversationId) {
       if (config.allowDevConversationAccess) {
-        // Local dev bypass giup test RT-24/RT-28 khi API membership chua san sang.
         return true;
       }
 

@@ -154,9 +154,7 @@ export function registerCallHandlers(
         callType: call.callType,
         expiresAt: call.expiresAt,
       };
-      // Emit to conversation room (for users already viewing this chat)
       socket.to(conversationRoomName(call.conversationId)).emit("call:incoming", incomingPayload);
-      // Also emit to callee's personal room so they receive it regardless of which screen they're on
       socket.to(`user:${event.payload.calleeUserId}`).emit("call:incoming", incomingPayload);
 
       emitAck(socket, event.requestId, {

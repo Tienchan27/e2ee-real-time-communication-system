@@ -39,6 +39,5 @@ export function readClientEvent<TPayload>(
 }
 
 export function readRequestId(data: unknown): string | undefined {
-  // Dung de tra error dung requestId neu payload bi sai shape.
   return isObject(data) && isUuid(data.requestId) ? data.requestId : undefined;
 }

@@ -260,6 +260,8 @@ reason: string [required, message_count|time_window|manual]
 senderEphemeralPublicKey: string(base64) [required]
 ```
 
+> **FE (bản tối thiểu):** `senderEphemeralPublicKey` mang `rotationSalt` (HKDF salt, 32 byte random base64), **không** phải ECDH public key. Cùng salt được nhúng trong `envelope.aad` của tin đầu sau rotate để peer offline vẫn derive được.
+
 ### key:rekey_required
 
 Payload:

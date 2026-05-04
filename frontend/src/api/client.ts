@@ -63,7 +63,7 @@ export class ApiClient {
     const response = await fetch(url, { ...options, headers });
 
     if (response.status === 401 && this.refreshHandler && !skipRefresh) {
-      // Queue all parallel 401s behind a single refresh — only one token request fires
+      // Coalesce parallel 401s into one refresh.
       if (!this.refreshPromise) {
         this.refreshPromise = this.refreshHandler().finally(() => {
           this.refreshPromise = null;
@@ -88,7 +88,7 @@ export class ApiClient {
       return retryData.data as T;
     }
 
-    // Guard against non-JSON responses (e.g. nginx HTML 404) before calling .json()
+    // Reject non-JSON bodies (e.g. nginx HTML 404).
     if (!response.headers.get("content-type")?.includes("application/json")) {
       throw new ApiError(response.status, "UNKNOWN_ERROR", undefined, `HTTP ${response.status}`);
     }
@@ -146,7 +146,7 @@ export class ApiClient {
   }
 
   async refreshToken(refreshToken: string): Promise<AuthResponse> {
-    // skipRefresh=true: if /auth/refresh itself returns 401, throw immediately (prevent deadlock)
+    // skipRefresh: avoid deadlock when /auth/refresh returns 401.
     return this.request<AuthResponse>("/auth/refresh", {
       method: "POST",
       body: JSON.stringify({ refreshToken }),

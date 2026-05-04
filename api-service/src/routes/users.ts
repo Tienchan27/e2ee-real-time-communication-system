@@ -18,7 +18,7 @@ router.get("/search", authRequired, async (req, res) => {
     return fail(res, 400, "VALIDATION_FAILED", "Invalid cursor");
   }
 
-  // FE cho phep go "@username"; strip "@" de prefix match dung voi cot username.
+  // Strip leading @ for username prefix search.
   const trimmedQuery = q.trim();
   const usernameQuery = trimmedQuery.startsWith("@") ? trimmedQuery.slice(1) : trimmedQuery;
 
