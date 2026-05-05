@@ -35,7 +35,7 @@ export class ApiError extends Error {
 export class ApiClient {
   private accessToken: string | null = null;
   private refreshHandler: (() => Promise<string>) | null = null;
-  private isRefreshing = false;
+  private refreshPromise: Promise<string> | null = null;
 
   setAccessToken(token: string | null) {
     this.accessToken = token;
@@ -48,6 +48,7 @@ export class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
+    skipRefresh = false,
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: Record<string, string> = {
@@ -61,28 +62,36 @@ export class ApiClient {
 
     const response = await fetch(url, { ...options, headers });
 
-    if (response.status === 401 && this.refreshHandler && !this.isRefreshing) {
-      this.isRefreshing = true;
-      try {
-        const newToken = await this.refreshHandler();
-        this.accessToken = newToken;
-        const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
-        const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
-        const retryData = (await retryResponse.json()) as ApiResponse<T>;
-        if (!retryResponse.ok || !retryData.success) {
-          throw new ApiError(
-            retryResponse.status,
-            retryData.error?.code || "UNKNOWN_ERROR",
-            retryData.error?.requestId,
-            retryData.error?.message,
-          );
-        }
-        return retryData.data as T;
-      } finally {
-        this.isRefreshing = false;
+    if (response.status === 401 && this.refreshHandler && !skipRefresh) {
+      // Queue all parallel 401s behind a single refresh — only one token request fires
+      if (!this.refreshPromise) {
+        this.refreshPromise = this.refreshHandler().finally(() => {
+          this.refreshPromise = null;
+        });
       }
+      const newToken = await this.refreshPromise;
+      this.accessToken = newToken;
+      const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
+      const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
+      if (!retryResponse.headers.get("content-type")?.includes("application/json")) {
+        throw new ApiError(retryResponse.status, "UNKNOWN_ERROR", undefined, `HTTP ${retryResponse.status}`);
+      }
+      const retryData = (await retryResponse.json()) as ApiResponse<T>;
+      if (!retryResponse.ok || !retryData.success) {
+        throw new ApiError(
+          retryResponse.status,
+          retryData.error?.code || "UNKNOWN_ERROR",
+          retryData.error?.requestId,
+          retryData.error?.message,
+        );
+      }
+      return retryData.data as T;
     }
 
+    // Guard against non-JSON responses (e.g. nginx HTML 404) before calling .json()
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      throw new ApiError(response.status, "UNKNOWN_ERROR", undefined, `HTTP ${response.status}`);
+    }
     const data = (await response.json()) as ApiResponse<T>;
 
     if (!response.ok || !data.success) {
@@ -137,10 +146,11 @@ export class ApiClient {
   }
 
   async refreshToken(refreshToken: string): Promise<AuthResponse> {
+    // skipRefresh=true: if /auth/refresh itself returns 401, throw immediately (prevent deadlock)
     return this.request<AuthResponse>("/auth/refresh", {
       method: "POST",
       body: JSON.stringify({ refreshToken }),
-    });
+    }, true);
   }
 
   async logout(refreshToken: string): Promise<{ revoked: boolean }> {

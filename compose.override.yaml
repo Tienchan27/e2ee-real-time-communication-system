@@ -1,5 +1,9 @@
-# Local development: auto-loaded with `docker compose up` (not used when `-f compose.yaml` only).
+# Dev override (auto-loaded with `docker compose up`).
 services:
+  postgres:
+    ports:
+      - "5432:5432"
+
   api-service:
     volumes:
       - ./api-service:/app

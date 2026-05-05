@@ -28,11 +28,9 @@ export const rtcConfig: RTCConfiguration = {
   bundlePolicy: "max-bundle",
 };
 
-// Timeout policy — SYS-08 / docs/04-flow.md
 export const ICE_GATHERING_TIMEOUT_MS = 4_000;
 export const ICE_CONNECTION_TIMEOUT_MS = 10_000;
 export const CALL_RENEGOTIATION_WINDOW_MS = 20_000;
 
-// Audio-only fallback thresholds — SYS-20 / docs/04-flow.md
 export const AUDIO_ONLY_FALLBACK_MIN_BITRATE_BPS = 50_000;
 export const AUDIO_ONLY_FALLBACK_HOLD_DURATION_MS = 3_000;

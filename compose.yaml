@@ -7,8 +7,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-e2ee_app}
       POSTGRES_USER: ${POSTGRES_USER:-e2ee_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-e2ee_pass}
-    ports:
-      - "5432:5432"
+    # KHONG publish port o base => prod (compose.yaml + compose.prod.yaml) khong expose postgres ra ngoai;
+    # container khac van noi qua service name "postgres". Local dev publish 5432 trong compose.override.yaml.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -61,6 +61,20 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+    networks:
+      - communication-network
+
+  coturn:
+    image: coturn/coturn:4.6.3
+    container_name: coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49152-49200:49152-49200/udp"
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
     networks:
       - communication-network
 

@@ -203,6 +203,7 @@ export function registerChatHandlers(
           nonce: event.payload.nonce,
           algorithm: event.payload.algorithm,
           keyVersion: event.payload.keyVersion,
+          ...(event.payload.aad ? { aad: event.payload.aad } : {}),
           createdAt: persistResult.createdAt,
         });
 

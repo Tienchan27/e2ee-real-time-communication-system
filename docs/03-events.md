@@ -146,6 +146,22 @@ Hành vi khi thành công:
 - Realtime gọi `socket.leave("conversation:{conversationId}")`.
 - Realtime trả `system:ack` cho client.
 
+### conversation:created
+- Bên gửi: Realtime (sau khi API gọi `POST /internal/conversations/notify-created`)
+- Bên nhận: Client (peer được mời vào direct conversation)
+- Mục đích: refresh danh sách conversation khi có người khác tạo chat direct với mình.
+
+Payload:
+```txt
+conversationId: string(uuid-v7) [required]
+initiatorUserId: string(uuid-v7) [required]
+initiatorDisplayName: string [optional]
+```
+
+Hành vi:
+- Realtime emit tới mọi socket đang kết nối của `peerUserId` (người nhận thông báo).
+- Client nên gọi lại `GET /conversations` để hiển thị chat mới mà không cần search ngược.
+
 ## Nhóm sự kiện `chat`
 
 ### chat:send
@@ -184,6 +200,7 @@ ciphertext: string(base64) [required]
 nonce: string(base64) [required]
 algorithm: string [required]
 keyVersion: number [required]
+aad: object [optional, wire metadata e.g. G-lite setup]
 createdAt: string(iso8601) [required]
 ```
 

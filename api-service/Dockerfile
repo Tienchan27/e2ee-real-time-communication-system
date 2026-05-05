@@ -23,5 +23,8 @@ RUN apk add --no-cache wget
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+# Migration runner + SQL can co trong image runtime de auto-migrate luc khoi dong (prod).
+COPY scripts ./scripts
+COPY migrations ./migrations
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

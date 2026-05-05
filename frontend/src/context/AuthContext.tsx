@@ -1,6 +1,8 @@
-import React, { createContext, useCallback, useEffect, useState } from "react";
+import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
 import type { User, AuthContext as AuthContextType } from "../types/index.js";
 import { apiClient } from "../api/client.js";
+import { uploadDevicePublicKeyWithRetry } from "../crypto/deviceKey.js";
+import { setActiveCryptoUserId } from "../crypto/conversationKeys.js";
 import { socketManager } from "../socket/manager.js";
 
 interface AuthContextValue extends AuthContextType {
@@ -27,14 +29,31 @@ const STORAGE_KEY_ACCESS_TOKEN = "auth:accessToken";
 const STORAGE_KEY_REFRESH_TOKEN = "auth:refreshToken";
 const STORAGE_KEY_USER = "auth:user";
 
+async function uploadPrekeyForUser(
+  userId: User["userId"],
+  onResult: (failed: boolean) => void,
+): Promise<void> {
+  try {
+    await uploadDevicePublicKeyWithRetry(
+      (publicKey) => apiClient.putDeviceEcdhPublicKey(publicKey),
+      userId,
+    );
+    onResult(false);
+  } catch (err) {
+    console.warn("[Auth] Device ECDH prekey upload failed after retries:", err);
+    onResult(true);
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [prekeyUploadFailed, setPrekeyUploadFailed] = useState(false);
+  const prekeyUploadedForSessionRef = useRef<string | null>(null);
 
-  // Load from storage on mount
   useEffect(() => {
     const storedAccessToken = localStorage.getItem(STORAGE_KEY_ACCESS_TOKEN);
     const storedRefreshToken = localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
@@ -46,10 +65,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRefreshToken(storedRefreshToken);
         setUser(JSON.parse(storedUser));
         apiClient.setAccessToken(storedAccessToken);
-        // Reconnect socket when session is restored from localStorage (e.g. page reload).
-        socketManager.connect(storedAccessToken).catch((err) =>
-          console.error("[Auth] Failed to reconnect socket on restore:", err),
-        );
       } catch (err) {
         console.error("Failed to load auth from storage:", err);
         localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);
@@ -61,7 +76,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  // Save to storage when auth changes
   useEffect(() => {
     if (accessToken && user) {
       localStorage.setItem(STORAGE_KEY_ACCESS_TOKEN, accessToken);
@@ -78,10 +92,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [accessToken, user, refreshToken]);
 
-  // Register silent token refresh handler
   useEffect(() => {
     if (!accessToken || !refreshToken || !user) {
       apiClient.setRefreshHandler(null);
+      prekeyUploadedForSessionRef.current = null;
+      setActiveCryptoUserId(null);
       return;
     }
 
@@ -90,9 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const response = await apiClient.refreshToken(refreshToken);
         setAccessToken(response.accessToken);
         setRefreshToken(response.refreshToken);
+        socketManager.reconnectWithToken(response.accessToken).catch((err) =>
+          console.error("[Auth] Failed to reconnect socket with refreshed token:", err),
+        );
         return response.accessToken;
       } catch {
-        // Refresh token expired or revoked — force re-login
         setUser(null);
         setAccessToken(null);
         setRefreshToken(null);
@@ -100,6 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Session expired. Please log in again.");
       }
     });
+
+    setActiveCryptoUserId(user.userId);
+
+    const sessionKey = `${user.userId}:${accessToken}`;
+    if (prekeyUploadedForSessionRef.current !== sessionKey) {
+      prekeyUploadedForSessionRef.current = sessionKey;
+      void uploadPrekeyForUser(user.userId, setPrekeyUploadFailed);
+    }
+
+    socketManager.connect(accessToken).catch((err) =>
+      console.error("[Auth] Failed to connect socket:", err),
+    );
   }, [accessToken, refreshToken, user]);
 
   const login = useCallback(async (identifier: string, password: string) => {
@@ -118,9 +147,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(response.user);
       setAccessToken(response.accessToken);
       setRefreshToken(response.refreshToken);
-
-      // Connect socket after login
-      await socketManager.connect(response.accessToken);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Login failed";
       setError(errorMsg);
@@ -141,6 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
+      prekeyUploadedForSessionRef.current = null;
+      setActiveCryptoUserId(null);
       setUser(null);
       setAccessToken(null);
       setRefreshToken(null);
@@ -186,9 +214,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(response.user);
       setAccessToken(response.accessToken);
       setRefreshToken(response.refreshToken);
-
-      // Connect socket after registration
-      await socketManager.connect(response.accessToken);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "OTP verification failed";
       setError(errorMsg);
@@ -204,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshToken: refreshToken || null,
     isLoading,
     error,
+    prekeyUploadFailed,
     login,
     logout,
     register,

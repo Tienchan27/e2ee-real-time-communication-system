@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { fail, ok } from "../http.js";
 import { authRequired } from "../middlewares/auth.js";
+import { notifyRealtimeConversationCreated } from "../services/realtimeNotify.js";
 import { isUuid, parseLimit } from "../validation.js";
 
 const router = Router();
@@ -78,6 +79,14 @@ router.post("/direct", authRequired, async (req, res) => {
       [conversation.id],
     );
     await client.query("COMMIT");
+
+    const initiatorMember = membersResult.rows.find((row) => row.user_id === userId);
+    void notifyRealtimeConversationCreated({
+      conversationId: conversation.id,
+      peerUserId,
+      initiatorUserId: userId,
+      initiatorDisplayName: initiatorMember?.display_name,
+    });
 
     return ok(res, {
       conversationId: conversation.id,
@@ -198,7 +207,8 @@ router.get("/", authRequired, async (req, res) => {
           lastMessagePreview: {
             messageId: row.message_id,
             senderUserId: row.sender_user_id,
-            preview: row.ciphertext,
+            // E2EE: server khong giai ma duoc; FE tu hien placeholder. Khong tra ciphertext.
+            preview: null,
             sentAt: row.message_created_at?.toISOString(),
           },
         }

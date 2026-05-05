@@ -165,11 +165,17 @@ router.post("/register/verify-otp", async (req, res) => {
       return fail(res, 400, "OTP_INVALID", "Invalid OTP", requestId);
     }
 
-    const userResult = await client.query<{ id: string }>(
+    const userResult = await client.query<{
+      id: string;
+      email: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+    }>(
       `
         INSERT INTO users (email, username, password_hash, display_name)
         VALUES ($1, $2, $3, $4)
-        RETURNING id
+        RETURNING id, email, username, display_name, avatar_url
       `,
       [otp.email, otp.username, otp.password_hash, otp.display_name],
     );
@@ -177,13 +183,22 @@ router.post("/register/verify-otp", async (req, res) => {
     await client.query("UPDATE otp_requests SET consumed_at = NOW() WHERE id = $1", [otp.id]);
     await client.query("COMMIT");
 
-    const userId = userResult.rows[0].id;
+    const newUser = userResult.rows[0];
+    const userId = newUser.id;
     const session = await createSessionAndRefreshToken(userId);
 
     return ok(res, {
       userId,
+      user: {
+        userId: newUser.id,
+        email: newUser.email,
+        username: newUser.username,
+        displayName: newUser.display_name,
+        avatarUrl: newUser.avatar_url,
+      },
       accessToken: issueAccessToken(userId, session.sessionId, session.deviceId),
       refreshToken: session.refreshToken,
+      expiresInSec: config.accessTokenTtlSec,
     });
   } catch (error) {
     await client.query("ROLLBACK");

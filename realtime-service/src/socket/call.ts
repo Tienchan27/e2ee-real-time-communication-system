@@ -1,5 +1,10 @@
 import type { Server, Socket } from "socket.io";
 import type { ConversationAccessService } from "../services/conversationAccess.js";
+import {
+  buildCallPersistPayload,
+  toCallLoggedEvent,
+  type CallPersistenceService,
+} from "../services/callPersistence.js";
 import type { CallStore, CallType } from "../stores/callStore.js";
 import { isObject, isUuid, readClientEvent, readRequestId } from "./events.js";
 import { conversationRoomName } from "./rooms.js";
@@ -9,6 +14,7 @@ type CallStartPayload = {
   callId: string;
   conversationId: string;
   callType: CallType;
+  calleeUserId: string;
 };
 
 type CallStatePayload = {
@@ -34,7 +40,8 @@ function readCallStartPayload(payload: Record<string, unknown>): CallStartPayloa
   if (
     !isUuid(payload.callId) ||
     !isUuid(payload.conversationId) ||
-    (payload.callType !== "voice" && payload.callType !== "video")
+    (payload.callType !== "voice" && payload.callType !== "video") ||
+    !isUuid(payload.calleeUserId)
   ) {
     throw new Error("VALIDATION_FAILED");
   }
@@ -43,6 +50,7 @@ function readCallStartPayload(payload: Record<string, unknown>): CallStartPayloa
     callId: payload.callId,
     conversationId: payload.conversationId,
     callType: payload.callType,
+    calleeUserId: payload.calleeUserId,
   };
 }
 
@@ -117,6 +125,7 @@ export function registerCallHandlers(
   socket: Socket,
   accessService: ConversationAccessService,
   callStore: CallStore,
+  callPersistence: CallPersistenceService,
 ) {
   socket.on("call:start", async (data: unknown) => {
     const requestId = readRequestId(data);
@@ -138,14 +147,17 @@ export function registerCallHandlers(
         callType: event.payload.callType,
       });
 
-      // RT-20: Caller tao call, realtime phat call:incoming cho peer trong conversation room.
-      socket.to(conversationRoomName(call.conversationId)).emit("call:incoming", {
+      const incomingPayload = {
         callId: call.callId,
         conversationId: call.conversationId,
         callerUserId: call.callerUserId,
         callType: call.callType,
         expiresAt: call.expiresAt,
-      });
+      };
+      // Emit to conversation room (for users already viewing this chat)
+      socket.to(conversationRoomName(call.conversationId)).emit("call:incoming", incomingPayload);
+      // Also emit to callee's personal room so they receive it regardless of which screen they're on
+      socket.to(`user:${event.payload.calleeUserId}`).emit("call:incoming", incomingPayload);
 
       emitAck(socket, event.requestId, {
         callId: call.callId,
@@ -168,15 +180,15 @@ export function registerCallHandlers(
   });
 
   socket.on("call:accept", async (data: unknown) => {
-    await handleCallStateEvent(socket, accessService, callStore, data, "call:accept");
+    await handleCallStateEvent(socket, accessService, callStore, callPersistence, data, "call:accept");
   });
 
   socket.on("call:reject", async (data: unknown) => {
-    await handleCallStateEvent(socket, accessService, callStore, data, "call:reject");
+    await handleCallStateEvent(socket, accessService, callStore, callPersistence, data, "call:reject");
   });
 
   socket.on("call:end", async (data: unknown) => {
-    await handleCallStateEvent(socket, accessService, callStore, data, "call:end");
+    await handleCallStateEvent(socket, accessService, callStore, callPersistence, data, "call:end");
   });
 
   socket.on("call:offer", async (data: unknown) => {
@@ -196,6 +208,7 @@ async function handleCallStateEvent(
   socket: Socket,
   accessService: ConversationAccessService,
   callStore: CallStore,
+  callPersistence: CallPersistenceService,
   data: unknown,
   eventName: "call:accept" | "call:reject" | "call:end",
 ) {
@@ -209,13 +222,24 @@ async function handleCallStateEvent(
       return;
     }
 
+    const callBefore = callStore.getCall(event.payload.callId);
+    if (!callBefore || callBefore.status === "ended") {
+      throw new Error("CALL_STATE_CONFLICT");
+    }
+
     if (eventName === "call:accept") {
       callStore.acceptCall(event.payload.callId, socket.data.auth.userId);
     } else {
       callStore.endCall(event.payload.callId);
+      const payload = buildCallPersistPayload(callBefore, eventName, event.payload.reason);
+      const result = await callPersistence.persistCall(payload);
+      if (result) {
+        const logged = toCallLoggedEvent(payload, result.createdAt);
+        socket.to(conversationRoomName(event.payload.conversationId)).emit("call:logged", logged);
+        socket.emit("call:logged", logged);
+      }
     }
 
-    // RT-21: accept/reject/end chi cap nhat state ngan han va relay sang peer.
     emitCallStateToRoom(socket, eventName, event.payload);
     emitAck(socket, event.requestId, {
       eventName,
@@ -260,7 +284,6 @@ async function handleCallRelayEvent<TPayload extends { callId: string; conversat
       return;
     }
 
-    // RT-22: offer/answer/ice chi la signaling WebRTC; media van di P2P/TURN, khong qua realtime.
     socket.to(conversationRoomName(event.payload.conversationId)).emit(eventName, {
       ...event.payload,
       senderUserId: socket.data.auth.userId,
@@ -287,10 +310,22 @@ async function handleCallRelayEvent<TPayload extends { callId: string; conversat
   }
 }
 
-export function startCallCleanupInterval(io: Server, callStore: CallStore, intervalMs: number) {
+export function startCallCleanupInterval(
+  io: Server,
+  callStore: CallStore,
+  callPersistence: CallPersistenceService,
+  intervalMs: number,
+) {
   const interval = setInterval(() => {
     for (const call of callStore.cleanupExpiredRingingCalls()) {
-      // RT-23: Cuoc goi ringing het han se duoc thong bao miss/timeout cho room.
+      const ringingCall = { ...call, status: "ringing" as const };
+      const payload = buildCallPersistPayload(ringingCall, "call:end", "timeout");
+      void callPersistence.persistCall(payload).then((result) => {
+        if (!result) return;
+        const logged = toCallLoggedEvent(payload, result.createdAt);
+        io.to(conversationRoomName(call.conversationId)).emit("call:logged", logged);
+      });
+
       io.to(conversationRoomName(call.conversationId)).emit("call:end", {
         callId: call.callId,
         conversationId: call.conversationId,

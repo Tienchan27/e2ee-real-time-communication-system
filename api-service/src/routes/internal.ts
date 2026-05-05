@@ -158,4 +158,111 @@ router.get(
   },
 );
 
+const CALL_STATUSES = new Set(["missed", "rejected", "completed", "ended"]);
+const CALL_TYPES = new Set(["voice", "video"]);
+
+router.post("/calls/persist", internalAuthRequired, async (req, res) => {
+  const { callId, conversationId, callerId, callType, status, startedAt, endedAt } =
+    req.body ?? {};
+
+  if (
+    !isUuid(callId) ||
+    !isUuid(conversationId) ||
+    !isUuid(callerId) ||
+    typeof callType !== "string" ||
+    !CALL_TYPES.has(callType) ||
+    typeof status !== "string" ||
+    !CALL_STATUSES.has(status)
+  ) {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid call log payload");
+  }
+
+  if (startedAt !== undefined && typeof startedAt !== "string") {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid startedAt");
+  }
+  if (endedAt !== undefined && typeof endedAt !== "string") {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid endedAt");
+  }
+
+  const receiverResult = await pool.query<{ user_id: string }>(
+    `
+      SELECT user_id
+      FROM conversation_members
+      WHERE conversation_id = $1 AND user_id <> $2
+      LIMIT 1
+    `,
+    [conversationId, callerId],
+  );
+  const receiver = receiverResult.rows[0];
+  if (!receiver) {
+    return fail(res, 403, "PERMISSION_DENIED", "Caller is not in a direct conversation");
+  }
+
+  const existingResult = await pool.query<{ id: string; created_at: Date }>(
+    "SELECT id, created_at FROM call_logs WHERE id = $1",
+    [callId],
+  );
+  if (existingResult.rows[0]) {
+    return ok(res, {
+      stored: true,
+      createdAt: existingResult.rows[0].created_at.toISOString(),
+      deduped: true,
+    });
+  }
+
+  try {
+    const insertResult = await pool.query<{ created_at: Date }>(
+      `
+        INSERT INTO call_logs (
+          id,
+          conversation_id,
+          caller_id,
+          receiver_id,
+          call_type,
+          status,
+          started_at,
+          ended_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING created_at
+      `,
+      [
+        callId,
+        conversationId,
+        callerId,
+        receiver.user_id,
+        callType,
+        status,
+        startedAt ?? null,
+        endedAt ?? null,
+      ],
+    );
+
+    await pool.query("UPDATE conversations SET updated_at = NOW() WHERE id = $1", [
+      conversationId,
+    ]);
+
+    return ok(res, {
+      stored: true,
+      createdAt: insertResult.rows[0].created_at.toISOString(),
+      deduped: false,
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      const dup = await pool.query<{ created_at: Date }>(
+        "SELECT created_at FROM call_logs WHERE id = $1",
+        [callId],
+      );
+      if (dup.rows[0]) {
+        return ok(res, {
+          stored: true,
+          createdAt: dup.rows[0].created_at.toISOString(),
+          deduped: true,
+        });
+      }
+    }
+    return fail(res, 500, "INTERNAL_ERROR", "Could not persist call log");
+  }
+});
+
 export const internalRouter = router;

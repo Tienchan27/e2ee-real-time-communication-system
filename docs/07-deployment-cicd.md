@@ -95,7 +95,7 @@ Template files (copy, không commit `.env` thật):
 
 **Option B — Single VM (khuyến nghị demo):** Một máy chạy `compose.yaml` + service `gateway` + TLS termination (Let's Encrypt). Một origin cho browser; đơn giản hóa cookie/CORS/socket.
 
-**TURN:** coturn trên VM riêng (tuần 6+); chưa có trong `compose.yaml` local. `VITE_STUN_*` / `VITE_TURN_*` bổ sung khi SYS-19.
+**TURN (local):** `compose.yaml` có service `coturn` (port `3478`, relay UDP `49152-49200`). Browser trên host Windows dùng `VITE_TURN_URL=turn:localhost:3478` với credential dev (`devuser`/`devpass` trong `infra/coturn/turnserver.conf`). Staging/prod: coturn trên VM riêng, rotate credential.
 
 ## Realtime implementation review (2026-05 → 2026-06)
 

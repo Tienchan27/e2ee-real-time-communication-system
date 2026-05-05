@@ -3,9 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import { useChat } from "../context/ChatContext.js";
 import { useCall } from "../context/CallContext.js";
-import { hasConversationKey } from "../crypto/conversationKeys.js";
+import { isE2eeSetupAad } from "../crypto/conversationKeys.js";
 import { socketManager } from "../socket/manager.js";
-import type { CallLog, CallType, TimelineItem, UUID } from "../types/index.js";
+import type { CallLog, CallType, Message, TimelineItem, UUID } from "../types/index.js";
 import "./ChatPage.css";
 
 function formatDuration(sec: number | null): string {
@@ -14,6 +14,44 @@ function formatDuration(sec: number | null): string {
   const s = sec % 60;
   if (m > 0) return `${m} phút`;
   return `${s} giây`;
+}
+
+function formatMessageTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getDateLabel(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "Hôm nay";
+  if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
+  return date.toLocaleDateString("vi-VN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function isSameDay(iso1: string, iso2: string): boolean {
+  return new Date(iso1).toDateString() === new Date(iso2).toDateString();
+}
+
+function isGroupedMessage(
+  current: TimelineItem,
+  previous: TimelineItem | undefined,
+): boolean {
+  if (!previous || previous.type === "call" || current.type === "call") return false;
+  if (current.message.senderUserId !== previous.message.senderUserId) return false;
+  const diff =
+    new Date(current.message.createdAt).getTime() -
+    new Date(previous.message.createdAt).getTime();
+  return diff < 2 * 60 * 1000;
 }
 
 function CallHistoryRow({
@@ -27,11 +65,11 @@ function CallHistoryRow({
 }) {
   const isOutgoing = call.callerId === currentUserId;
   const mediaLabel = call.callType === "video" ? "Cuộc gọi video" : "Cuộc gọi thoại";
-  const direction = isOutgoing ? "Đi" : "Đến";
+  const direction = isOutgoing ? "đi" : "đến";
 
   let statusText = "";
   if (call.status === "missed") statusText = "bị nhỡ";
-  else if (call.status === "rejected") statusText = "Từ chối";
+  else if (call.status === "rejected") statusText = "đã từ chối";
   else if (call.status === "completed") {
     const dur = formatDuration(call.durationSec);
     statusText = dur ? `· ${dur}` : "· Hoàn thành";
@@ -41,14 +79,28 @@ function CallHistoryRow({
 
   return (
     <div className="call-history-row">
-      <div className="call-history-icon">{call.callType === "video" ? "📹" : "📞"}</div>
+      <div className="call-history-icon">
+        {call.callType === "video" ? (
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" />
+          </svg>
+        )}
+      </div>
       <div className="call-history-body">
         <div className="call-history-title">
           {mediaLabel} {direction}
         </div>
         <div className="call-history-sub">{statusText}</div>
       </div>
-      <button type="button" className="call-callback-btn" onClick={() => onCallback(call.callType)}>
+      <button
+        type="button"
+        className="call-callback-btn"
+        onClick={() => onCallback(call.callType)}
+      >
         Gọi lại
       </button>
     </div>
@@ -68,19 +120,20 @@ export function ChatPage() {
     loadMessages,
     sendMessage,
     presences,
+    subscribeToPresence,
+    keyReadyConversations,
   } = useChat();
   const { startCall } = useCall();
 
   const [messageText, setMessageText] = useState("");
-  const [isSending, setIsSending] = useState(false);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
-  const [keyReady, setKeyReady] = useState(true);
   const [error, setError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const conversationId = (conversationIdParam as UUID) || currentConversationId;
   const conversation = conversationId ? conversations.get(conversationId) : null;
   const timelineItems = conversationId ? timeline.get(conversationId) || [] : [];
+  const isKeyReady = conversationId ? keyReadyConversations.has(conversationId) : false;
 
   useEffect(() => {
     if (!conversationId) {
@@ -95,17 +148,28 @@ export function ChatPage() {
     }
 
     setIsLoadingChat(true);
-    loadMessages(conversationId)
-      .finally(() => {
-        setIsLoadingChat(false);
-        setKeyReady(hasConversationKey(conversationId));
-      });
+    loadMessages(conversationId).finally(() => {
+      setIsLoadingChat(false);
+    });
 
     return () => {
       void socketManager.leaveConversation(conversationId);
       setCurrentConversationId(null);
     };
   }, [conversationId, loadMessages]);
+
+  // Subscribe to presence for members of this conversation
+  useEffect(() => {
+    if (!conversationId || !user) return;
+    const conv = conversations.get(conversationId);
+    if (!conv) return;
+    const otherIds = conv.members
+      .filter((m) => m.userId !== user.userId)
+      .map((m) => m.userId);
+    if (otherIds.length > 0) {
+      void subscribeToPresence(otherIds);
+    }
+  }, [conversationId, conversations, subscribeToPresence, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -115,17 +179,15 @@ export function ChatPage() {
     e.preventDefault();
     if (!messageText.trim() || !conversationId) return;
 
+    const text = messageText.trim();
+    setMessageText("");
     setError("");
-    setIsSending(true);
 
     try {
-      await sendMessage(conversationId, messageText.trim());
-      setMessageText("");
+      await sendMessage(conversationId, text);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to send message";
+      const errorMsg = err instanceof Error ? err.message : "Gửi tin nhắn thất bại";
       setError(errorMsg);
-    } finally {
-      setIsSending(false);
     }
   };
 
@@ -141,7 +203,7 @@ export function ChatPage() {
   };
 
   if (!conversation || !user) {
-    return <div className="chat-page loading">Loading conversation...</div>;
+    return <div className="chat-page loading">Đang tải...</div>;
   }
 
   const otherMembers = conversation.members.filter((m) => m.userId !== user.userId);
@@ -151,41 +213,95 @@ export function ChatPage() {
     return presence?.status || "offline";
   }
 
+  function renderMessageStatus(message: Message): React.ReactNode {
+    if (message.outboundStatus === "pending_key" || message.outboundStatus === "sending") {
+      return (
+        <span className="message-status pending">
+          <span className="send-spinner" />
+        </span>
+      );
+    }
+    if (message.outboundStatus === "failed") {
+      return <span className="message-status failed">✗</span>;
+    }
+    return (
+      <span className="message-status">
+        {message.readBy.length > 0 ? "✓✓" : message.deliveredTo.length > 0 ? "✓" : "○"}
+      </span>
+    );
+  }
+
+  function getPresenceLabel(userId: UUID): string {
+    const status = getPresenceStatus(userId);
+    if (status === "online") return "Đang hoạt động";
+    if (status === "away") return "Vắng mặt";
+    return "Ngoại tuyến";
+  }
+
   return (
     <div className="chat-page">
       <div className="chat-header">
-        <button className="back-button" onClick={() => navigate("/home")}>
-          ← Back
+        <button
+          className="back-button"
+          onClick={() => navigate("/home")}
+          aria-label="Quay lại"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
         </button>
+
         <div className="chat-info">
-          <h1>
-            {otherMembers.length === 1
-              ? otherMembers[0].displayName
-              : `${otherMembers.length} members`}
-          </h1>
+          <div className="chat-info-top">
+            <h1>
+              {otherMembers.length === 1
+                ? otherMembers[0].displayName
+                : `${otherMembers.length} thành viên`}
+            </h1>
+            {isKeyReady && (
+              <span className="e2ee-badge" title="Mã hoá đầu cuối">
+                🔒 E2EE
+              </span>
+            )}
+          </div>
           {otherMembers.length === 1 && (
             <span className={`status ${getPresenceStatus(otherMembers[0].userId)}`}>
-              {getPresenceStatus(otherMembers[0].userId)}
+              {getPresenceLabel(otherMembers[0].userId)}
             </span>
           )}
         </div>
+
         {otherMembers.length === 1 && (
           <div className="chat-call-actions">
             <button
               type="button"
               className="call-header-btn"
-              title="Gọi thoại"
+              aria-label="Gọi thoại"
               onClick={() => void handleStartCall("voice")}
             >
-              📞
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" />
+              </svg>
             </button>
             <button
               type="button"
               className="call-header-btn"
-              title="Gọi video"
+              aria-label="Gọi video"
               onClick={() => void handleStartCall("video")}
             >
-              📹
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+              </svg>
             </button>
           </div>
         )}
@@ -194,70 +310,98 @@ export function ChatPage() {
       <div className="messages-container">
         {timelineItems.length === 0 ? (
           <div className="empty-messages">
-            <p>No messages yet. Start a conversation!</p>
+            <p>Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện!</p>
           </div>
         ) : (
-          timelineItems.map((item: TimelineItem) =>
-            item.type === "call" ? (
-              <CallHistoryRow
-                key={`call-${item.call.callId}`}
-                call={item.call}
-                currentUserId={user.userId}
-                onCallback={(callType) => void handleStartCall(callType)}
-              />
-            ) : (
-              <div
-                key={item.message.messageId}
-                className={`message ${
-                  item.message.senderUserId === user.userId ? "sent" : "received"
-                }`}
+          timelineItems.map((item: TimelineItem, index: number) => {
+            const prevItem = index > 0 ? timelineItems[index - 1] : undefined;
+            const showDateSep =
+              !prevItem || !isSameDay(item.sortAt, prevItem.sortAt);
+            const grouped = isGroupedMessage(item, prevItem);
+
+            return (
+              <React.Fragment
+                key={
+                  item.type === "call"
+                    ? `call-${item.call.callId}`
+                    : (item.message.clientTempId ?? item.message.messageId)
+                }
               >
-                {item.message.senderUserId !== user.userId && (
-                  <div className="message-avatar">
-                    {item.message.senderAvatarUrl ? (
-                      <img src={item.message.senderAvatarUrl} alt={item.message.senderDisplayName} />
-                    ) : (
-                      <span>{item.message.senderDisplayName?.[0] ?? "?"}</span>
-                    )}
+                {showDateSep && (
+                  <div className="date-separator">
+                    <span>{getDateLabel(item.sortAt)}</span>
                   </div>
                 )}
-                <div className="message-content">
-                  {item.message.senderUserId !== user.userId && (
-                    <div className="message-sender">
-                      {item.message.senderDisplayName || "Người dùng"}
+                {item.type === "call" ? (
+                  <CallHistoryRow
+                    call={item.call}
+                    currentUserId={user.userId}
+                    onCallback={(callType) => void handleStartCall(callType)}
+                  />
+                ) : (
+                  <div
+                    className={`message ${
+                      item.message.senderUserId === user.userId ? "sent" : "received"
+                    }${grouped ? " grouped" : ""}`}
+                  >
+                    {item.message.senderUserId !== user.userId ? (
+                      grouped ? (
+                        <div className="message-avatar-placeholder" />
+                      ) : (
+                        <div className="message-avatar">
+                          {item.message.senderAvatarUrl ? (
+                            <img
+                              src={item.message.senderAvatarUrl}
+                              alt={item.message.senderDisplayName}
+                            />
+                          ) : (
+                            <span>
+                              {item.message.senderDisplayName?.[0]?.toUpperCase() ?? "?"}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    ) : null}
+                    <div className="message-content">
+                      {!grouped && item.message.senderUserId !== user.userId && (
+                        <div className="message-sender">
+                          {item.message.senderDisplayName || "Người dùng"}
+                        </div>
+                      )}
+                      <div className="message-text">
+                        {item.message.plaintext ? (
+                          item.message.plaintext
+                        ) : (
+                          <span className="message-encrypted-placeholder">
+                            🔒 Chưa giải mã được
+                            {isE2eeSetupAad(item.message.envelope.aad) && (
+                              <span className="message-decrypt-hint">
+                                Không thể giải mã — có thể do đổi thiết bị hoặc xóa dữ liệu trình
+                                duyệt. Nhờ người gửi gửi lại tin mới.
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      <div className="message-footer">
+                        <span className="message-time">
+                          {formatMessageTime(item.message.createdAt)}
+                        </span>
+                        {item.message.senderUserId === user.userId && renderMessageStatus(item.message)}
+                      </div>
                     </div>
-                  )}
-                  <div className="message-text">
-                    {item.message.plaintext
-                      ? item.message.plaintext
-                      : <span className="message-encrypted-placeholder">🔒 Chưa giải mã được</span>}
-                  </div>
-                  <div className="message-time">
-                    {new Date(item.message.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                </div>
-                {item.message.senderUserId === user.userId && (
-                  <div className="message-status">
-                    {item.message.readBy.length > 0
-                      ? "✓✓"
-                      : item.message.deliveredTo.length > 0
-                        ? "✓"
-                        : "○"}
                   </div>
                 )}
-              </div>
-            ),
-          )
+              </React.Fragment>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
 
       <form className="message-input-form" onSubmit={handleSendMessage}>
-        {!keyReady && !isLoadingChat && (
-          <div className="error-message">Đang thiết lập mã hoá end-to-end…</div>
+        {isLoadingChat && (
+          <div className="info-message">Đang thiết lập kênh mã hoá an toàn…</div>
         )}
         {error && <div className="error-message">{error}</div>}
         <div className="input-group">
@@ -265,16 +409,30 @@ export function ChatPage() {
             type="text"
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
-            placeholder={isLoadingChat ? "Đang thiết lập kênh mã hoá..." : "Type a message..."}
-            disabled={isSending || isLoadingChat}
+            placeholder={
+              isLoadingChat ? "Đang thiết lập kênh mã hoá..." : "Nhập tin nhắn..."
+            }
+            disabled={isLoadingChat}
             className="message-input"
           />
-          <button type="submit" disabled={isSending || isLoadingChat || !messageText.trim()}>
-            {isSending ? "..." : "Send"}
+          <button
+            type="submit"
+            disabled={isLoadingChat || !messageText.trim()}
+            className="send-button"
+            aria-label="Gửi"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
           </button>
         </div>
       </form>
     </div>
   );
-
 }

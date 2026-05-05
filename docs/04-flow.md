@@ -18,7 +18,7 @@ Mô tả chi tiết từng bước cho chat và call để thành viên triển 
 2. API tạo yêu cầu OTP và gửi OTP qua email.
 3. FE gửi OTP tới `/auth/register/verify-otp`.
 4. API tạo tài khoản, trả access token + refresh token.
-5. FE lưu token và khởi tạo socket auth ở bước handshake.
+5. FE lưu token, wire `refreshHandler` trên API client, **rồi** upload ECDH prekey (`PUT /devices/me/ecdh-public-key`) và kết nối socket.
 
 Nhánh lỗi:
 - OTP hết hạn -> FE hiển thị gửi lại OTP với cooldown.
@@ -33,8 +33,11 @@ Phân công:
 
 1. FE tìm user qua `/users/search` bằng `@username` hoặc email.
 2. FE calls `/conversations/direct` with `peerUserId`.
-3. API returns `conversationId`.
-4. FE tham gia room socket của conversation qua realtime.
+3. API returns `conversationId` và (fire-and-forget) gọi realtime `POST /internal/conversations/notify-created`.
+4. **Initiator (A):** FE gọi `markConversationOpenedByMe` — conv hiện trong sidebar dù chưa có tin.
+5. **Peer (B):** conv **ẩn** trong sidebar cho đến khi có tin (`lastMessagePreview` từ API) hoặc nhận `chat:message`.
+6. FE tham gia room socket khi **mở chat** (`loadMessages`). Peer online cũng **join room có chọn lọc** từ `conversation:created` nếu conv chưa có G-lite setup (hỗ trợ socket key exchange fallback).
+7. Peer nhận `conversation:created` → refresh danh sách; join room chỉ khi `shouldAllowSocketKeyExchange` (conv vẫn ẩn trong sidebar nếu chưa có message).
 
 Nhánh lỗi:
 - Không tìm thấy user -> hiển thị kết quả rỗng.
@@ -63,21 +66,25 @@ sequenceDiagram
 
 Các bước chi tiết:
 
-1. FE mã hóa plaintext với `keyVersion` đang hoạt động.
-2. FE gửi event `chat:send`.
-3. Realtime kiểm tra schema và auth context.
-4. Realtime suy ra `senderUserId` từ auth context ở handshake, rồi kiểm tra quyền thành viên conversation.
-5. Realtime gọi API nội bộ để persist.
-6. API lưu bản ghi và trả trạng thái dedupe.
-7. Realtime gửi ack và fanout.
-8. Recipient giải mã và gửi `chat:delivered`.
-9. Event đọc được gửi khi recipient mở conversation.
+1. FE hiển thị **bubble optimistic** ngay (`outboundStatus: pending_key`) trước khi wire send hoàn tất.
+2. FE mã hóa plaintext với `keyVersion` đang hoạt động.
+3. FE gửi event `chat:send` — bubble chuyển `sending` → `sent` (hoặc `failed`).
+4. Sidebar sort theo `lastActivityAt` local; preview plaintext từ client (E2EE: server preview luôn null).
+5. Realtime kiểm tra schema và auth context.
+6. Realtime suy ra `senderUserId` từ auth context ở handshake, rồi kiểm tra quyền thành viên conversation.
+7. Realtime gọi API nội bộ để persist.
+8. API lưu bản ghi và trả trạng thái dedupe.
+9. Realtime gửi ack và fanout.
+10. Recipient giải mã và gửi `chat:delivered`.
+11. Event đọc được gửi khi recipient mở conversation.
 
 Nhánh lỗi:
 - API persist lỗi -> realtime trả `system:error` với `retryable=true`.
 - Key mismatch ở recipient -> recipient gửi `key:rekey_required`.
 - Socket ngắt -> sender retry với cùng `requestId`.
 - Sender không thuộc conversation -> realtime trả `PERMISSION_DENIED`.
+- Peer chưa có prekey / socket timeout -> bubble `failed` + thông báo rõ (không treo `pending_key` mãi).
+- Prekey upload thất bại sau login -> banner cảnh báo trên sidebar.
 
 Phân công theo bước:
 - Phụ trách FE: bước 1, 2, 8, 9 và đồng bộ trạng thái giao diện.

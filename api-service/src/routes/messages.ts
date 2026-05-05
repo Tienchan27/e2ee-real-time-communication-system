@@ -49,6 +49,7 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
     nonce: string;
     algorithm: string;
     key_version: number;
+    aad: Record<string, unknown> | null;
     client_message_seq: number | null;
     created_at: Date;
     sender_username: string;
@@ -64,6 +65,7 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
         m.nonce,
         m.algorithm,
         m.key_version,
+        m.aad,
         m.client_message_seq,
         m.created_at,
         u.username AS sender_username,
@@ -105,6 +107,7 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
         nonce: row.nonce,
         algorithm: row.algorithm,
         keyVersion: row.key_version,
+        ...(row.aad ? { aad: row.aad } : {}),
         clientMessageSeq: row.client_message_seq ?? 0,
       },
       deliveredTo: [],

@@ -23,7 +23,7 @@ export function createConversationAccessService(config: AppConfig): Conversation
 
       const baseUrl = config.apiInternalBaseUrl.replace(/\/+$/, "");
 
-      const url = `${baseUrl}/internal/conversations/${conversationId}/members/${userId}`;
+      const url = `${baseUrl}/api/v1/internal/conversations/${conversationId}/members/${userId}`;
 
       try {
         const response = await fetch(url, {

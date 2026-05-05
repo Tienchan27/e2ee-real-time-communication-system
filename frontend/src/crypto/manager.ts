@@ -1,8 +1,5 @@
 export class CryptoManager {
-  // Per-conversation key store: conversationId → keyVersion → CryptoKey
   private conversationKeys: Map<string, Map<number, CryptoKey>> = new Map();
-
-  // ── AES-256-GCM encrypt/decrypt ──────────────────────────────────────────
 
   async encrypt(
     conversationId: string,
@@ -52,7 +49,7 @@ export class CryptoManager {
 
     const algorithm: AesGcmParams = {
       name: "AES-GCM",
-      iv: this.base64ToBuffer(nonce),
+      iv: this.base64ToBuffer(nonce) as BufferSource,
       ...(aad && { additionalData: new TextEncoder().encode(JSON.stringify(aad)) }),
     };
 
@@ -64,8 +61,6 @@ export class CryptoManager {
 
     return new TextDecoder().decode(plaintext);
   }
-
-  // ── Per-conversation key store ───────────────────────────────────────────
 
   setConversationKey(conversationId: string, keyVersion: number, key: CryptoKey): void {
     let versions = this.conversationKeys.get(conversationId);
@@ -85,7 +80,18 @@ export class CryptoManager {
     return versions !== undefined && versions.size > 0;
   }
 
-  // ── ECDH key exchange (P-256) ────────────────────────────────────────────
+  clearConversationKey(conversationId: string, keyVersion: number): void {
+    const versions = this.conversationKeys.get(conversationId);
+    if (!versions) return;
+    versions.delete(keyVersion);
+    if (versions.size === 0) {
+      this.conversationKeys.delete(conversationId);
+    }
+  }
+
+  clearAllConversationKeys(): void {
+    this.conversationKeys.clear();
+  }
 
   async generateEcdhKeyPair(): Promise<CryptoKeyPair> {
     return crypto.subtle.generateKey(
@@ -103,15 +109,14 @@ export class CryptoManager {
   async importEcdhPublicKey(base64: string): Promise<CryptoKey> {
     return crypto.subtle.importKey(
       "spki",
-      this.base64ToBuffer(base64),
+      this.base64ToBuffer(base64) as BufferSource,
       { name: "ECDH", namedCurve: "P-256" },
       false,
       [],
     );
   }
 
-  // Derive AES-256-GCM key from ECDH shared secret via HKDF-SHA256
-  // salt = conversationId (UTF-8 bytes), info = "e2ee-chat-v1"
+  // HKDF: salt=conversationId, info=e2ee-chat-v1
   async deriveSharedKey(
     myPrivateKey: CryptoKey,
     peerPublicKey: CryptoKey,
@@ -139,8 +144,6 @@ export class CryptoManager {
     );
   }
 
-  // ── JWK export/import (for key persistence) ──────────────────────────────
-
   async exportKeyToJwk(key: CryptoKey): Promise<string> {
     const jwk = await crypto.subtle.exportKey("jwk", key);
     return btoa(JSON.stringify(jwk));
@@ -150,8 +153,6 @@ export class CryptoManager {
     const jwk = JSON.parse(atob(jwkStr)) as JsonWebKey;
     return crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
   }
-
-  // ── Buffer helpers ────────────────────────────────────────────────────────
 
   private bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
     const bytes = new Uint8Array(buffer);

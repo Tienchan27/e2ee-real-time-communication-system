@@ -6,6 +6,8 @@ import { config } from "./config.js";
 import { pingDb } from "./db.js";
 import { authRouter } from "./routes/auth.js";
 import { conversationsRouter } from "./routes/conversations.js";
+import { callsRouter } from "./routes/calls.js";
+import { devicesRouter } from "./routes/devices.js";
 import { internalRouter } from "./routes/internal.js";
 import { messagesRouter } from "./routes/messages.js";
 import { usersRouter } from "./routes/users.js";
@@ -25,9 +27,11 @@ export function createApp() {
 
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/conversations", conversationsRouter);
+  app.use("/api/v1/conversations/:conversationId/calls", callsRouter);
   app.use("/api/v1", messagesRouter);
   app.use("/api/v1/internal", internalRouter);
   app.use("/api/v1/users", usersRouter);
+  app.use("/api/v1/devices", devicesRouter);
 
   app.get("/health", (_req, res) => {
     res.json({

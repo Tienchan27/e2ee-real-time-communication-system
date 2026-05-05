@@ -536,6 +536,7 @@ export class SocketManager {
     callId: UUID;
     conversationId: UUID;
     callType: "voice" | "video";
+    calleeUserId: UUID;
   }): Promise<void> {
     return this.emitCallEvent("call:start", payload);
   }

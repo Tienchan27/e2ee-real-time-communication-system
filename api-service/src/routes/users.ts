@@ -18,6 +18,10 @@ router.get("/search", authRequired, async (req, res) => {
     return fail(res, 400, "VALIDATION_FAILED", "Invalid cursor");
   }
 
+  // FE cho phep go "@username"; strip "@" de prefix match dung voi cot username.
+  const trimmedQuery = q.trim();
+  const usernameQuery = trimmedQuery.startsWith("@") ? trimmedQuery.slice(1) : trimmedQuery;
+
   const result = await pool.query<{
     id: string;
     username: string;
@@ -36,7 +40,7 @@ router.get("/search", authRequired, async (req, res) => {
       ORDER BY username ASC
       LIMIT $5
     `,
-    [req.auth!.userId, q.trim(), q.trim(), cursor ?? null, limit + 1],
+    [req.auth!.userId, usernameQuery, trimmedQuery, cursor ?? null, limit + 1],
   );
 
   const hasMore = result.rows.length > limit;
@@ -50,6 +54,54 @@ router.get("/search", authRequired, async (req, res) => {
       avatarUrl: row.avatar_url ?? null,
     })),
     nextCursor: hasMore ? rows.at(-1)?.id ?? null : null,
+  });
+});
+
+router.get("/:userId/ecdh-public-key", authRequired, async (req, res) => {
+  const { userId } = req.params;
+  if (!isUuid(userId)) {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid userId");
+  }
+
+  const userExists = await pool.query<{ id: string }>(
+    "SELECT id FROM users WHERE id = $1",
+    [userId],
+  );
+  if (userExists.rowCount === 0) {
+    return fail(res, 404, "USER_NOT_FOUND", "User not found");
+  }
+
+  const result = await pool.query<{
+    user_id: string;
+    device_id: string;
+    public_key_spki: string;
+    updated_at: Date;
+  }>(
+    `
+      SELECT user_id, device_id, public_key_spki, updated_at
+      FROM device_ecdh_public_keys
+      WHERE user_id = $1
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return fail(
+      res,
+      404,
+      "DEVICE_PREKEY_NOT_FOUND",
+      "User has no device public key registered",
+    );
+  }
+
+  return ok(res, {
+    userId: row.user_id,
+    deviceId: row.device_id,
+    publicKey: row.public_key_spki,
+    updatedAt: row.updated_at.toISOString(),
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Socket } from "socket.io";
 import type { ConversationAccessService } from "../services/conversationAccess.js";
+import type { CallStore } from "../stores/callStore.js";
 import type { RoomSubscriptionStore } from "../stores/roomSubscriptionStore.js";
 import { isUuid, readClientEvent, readRequestId } from "./events.js";
 import { emitAck, emitError } from "./system.js";
@@ -42,6 +43,7 @@ export function registerRoomHandlers(
   socket: Socket,
   accessService: ConversationAccessService,
   subscriptionStore: RoomSubscriptionStore,
+  callStore: CallStore,
 ) {
   socket.on("conversation:join", async (data: unknown) => {
     const requestId = readRequestId(data);
@@ -67,6 +69,27 @@ export function registerRoomHandlers(
       const roomName = conversationRoomName(event.payload.conversationId);
       await socket.join(roomName);
       subscriptionStore.remember(auth.userId, auth.deviceId, event.payload.conversationId);
+
+      // Bao cho cac thanh vien dang trong room biet co peer moi vao, de ho re-trigger
+      // key exchange (tranh race khi ben kia join room sau khi init da phat).
+      socket.to(roomName).emit("conversation:peer_joined", {
+        conversationId: event.payload.conversationId,
+        userId: auth.userId,
+        deviceId: auth.deviceId,
+      });
+
+      // If there is a ringing call in this conversation and this socket is the callee,
+      // re-emit call:incoming so they see the call even if they joined the room after it started.
+      const ringingCall = callStore.getRingingCallForConversation(event.payload.conversationId);
+      if (ringingCall && ringingCall.callerUserId !== auth.userId) {
+        socket.emit("call:incoming", {
+          callId: ringingCall.callId,
+          conversationId: ringingCall.conversationId,
+          callerUserId: ringingCall.callerUserId,
+          callType: ringingCall.callType,
+          expiresAt: ringingCall.expiresAt,
+        });
+      }
 
       emitAck(socket, event.requestId, {
         conversationId: event.payload.conversationId,

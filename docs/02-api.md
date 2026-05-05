@@ -87,8 +87,10 @@ otpCode: string(6 digits) [required]
 Response:
 ```txt
 userId: string(uuid-v7)
+user: object [required, giống /auth/login]
 accessToken: string
 refreshToken: string
+expiresInSec: number [required]
 ```
 
 ### POST `/auth/login`
@@ -183,6 +185,32 @@ Quy tắc riêng tư:
 - Không trả email thô trong kết quả tìm kiếm công khai.
 - Endpoint tìm kiếm bắt buộc có rate limit.
 
+### GET `/users/{userId}/ecdh-public-key`
+
+Lấy public key ECDH P-256 (SPKI base64) mới nhất của user — dùng cho G-lite first-message setup.
+
+Response:
+```txt
+userId: string(uuid-v7) [required]
+deviceId: string(uuid-v7) [required]
+publicKey: string(base64 SPKI) [required]
+updatedAt: string(iso8601) [required]
+```
+
+Lỗi `404` với code `DEVICE_PREKEY_NOT_FOUND` nếu user tồn tại nhưng chưa upload key (chưa login lần nào sau migrate).
+Lỗi `404` với code `USER_NOT_FOUND` nếu userId không tồn tại.
+
+Giới hạn: một key “active” mỗi user (bản ghi `updated_at` mới nhất); không chọn device khi peer có nhiều thiết bị.
+
+### PUT `/devices/me/ecdh-public-key`
+
+Đăng ký hoặc cập nhật public key của device hiện tại (từ JWT `deviceId`).
+
+Request:
+```txt
+publicKey: string(base64 SPKI) [required]
+```
+
 ## Cuộc trò chuyện
 
 ### POST `/conversations/direct`
@@ -268,6 +296,44 @@ Quy tắc bảo mật nội bộ:
 - Endpoint này chỉ chấp nhận gọi từ Realtime service đã xác thực service-to-service.
 - `senderUserId` và `senderDeviceId` phải là giá trị Realtime suy ra từ auth context handshake, không lấy trực tiếp từ client payload.
 
+### POST `/internal/calls/persist` (chỉ dùng nội bộ)
+
+Lưu lịch sử cuộc gọi khi call kết thúc (reject/end/timeout).
+
+Request:
+```txt
+callId: string(uuid) [required]
+conversationId: string(uuid) [required]
+callerId: string(uuid) [required]
+callType: string [required, voice|video]
+status: string [required, missed|rejected|completed|ended]
+startedAt: string(iso8601) [optional]
+endedAt: string(iso8601) [optional]
+```
+
+Response:
+```txt
+stored: boolean [required]
+createdAt: string(iso8601) [required]
+deduped: boolean [required]
+```
+
+`receiverId` được API suy ra từ `conversation_members` (direct 1-1), không tin client.
+
+### GET `/conversations/{conversationId}/calls`
+
+Bearer JWT, chỉ member.
+
+Query: `limit`, `beforeCallId` (cursor).
+
+Response:
+```txt
+calls: CallLogItem[] [required]
+nextCursor: string(uuid) [optional]
+```
+
+Mỗi `CallLogItem`: `callId`, `conversationId`, `callerId`, `receiverId`, `callType`, `status`, `startedAt`, `endedAt`, `durationSec`, `createdAt`.
+
 ## Trạng thái nhận và đọc
 
 ### POST `/messages/{messageId}/delivered`
@@ -338,9 +404,12 @@ readAt: string(iso8601) [required]
 
 > Những điểm dưới đây là lệch lạc đang tồn tại giữa spec contract và implementation thực tế. Ghi lại để team ưu tiên fix.
 
-- **GET `/conversations` response shape mismatch:** API trả `data` là array trực tiếp (`data: [...]`), nhưng `ApiClient.getConversations()` phía FE kỳ vọng `data: { conversations: [...] }`. Kết quả: `result.conversations` là `undefined` → trang Home luôn rỗng.
-- **GET `/conversations/:id/messages` tương tự:** API trả array trực tiếp, FE client kỳ vọng `{ messages: [...] }`.
-- **Chưa có endpoint tìm người dùng:** `GET /users/search` chưa triển khai ở API, nhưng FE client đã có `searchUsers()`.
+- ~~**GET `/conversations` response shape mismatch**~~ — Đã fix: API trả `{ conversations, nextCursor }`.
+- ~~**GET `/conversations/:id/messages` tương tự**~~ — Đã fix: API trả `{ messages, nextCursor }` với `envelope` lồng.
+- ~~**Chưa có endpoint tìm người dùng**~~ — Đã có `GET /users/search`; hỗ trợ cả `@username` (strip `@`) và email.
+- **verify-otp:** từ 2026-06 trả thêm `user` object + `expiresInSec` (đồng bộ với `/login`) để FE vào thẳng phiên sau đăng ký.
+- **lastMessagePreview:** `preview` không còn trả ciphertext (E2EE, server không giải mã được); FE hiển thị placeholder.
+- **Realtime `chat:message`:** payload phẳng (theo `03-events.md`); FE tự map sang `envelope` để giải mã.
 
 ## Changelog
 

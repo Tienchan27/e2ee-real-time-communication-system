@@ -11,6 +11,7 @@ export type CallRecord = {
   createdAt: string;
   expiresAt: string;
   acceptedByUserId?: string;
+  acceptedAt?: string;
   endedAt?: string;
 };
 
@@ -48,11 +49,15 @@ export class CallStore {
     if (call.status !== "ringing") {
       throw new Error("CALL_STATE_CONFLICT");
     }
+    if (userId === call.callerUserId) {
+      throw new Error("CALL_STATE_CONFLICT");
+    }
 
     const updated: CallRecord = {
       ...call,
       status: "active",
       acceptedByUserId: userId,
+      acceptedAt: new Date().toISOString(),
     };
 
     this.callsById.set(callId, updated);
@@ -73,6 +78,15 @@ export class CallStore {
 
   getCall(callId: string): CallRecord | undefined {
     return this.callsById.get(callId);
+  }
+
+  getRingingCallForConversation(conversationId: string): CallRecord | undefined {
+    for (const call of this.callsById.values()) {
+      if (call.conversationId === conversationId && call.status === "ringing") {
+        return call;
+      }
+    }
+    return undefined;
   }
 
   cleanupExpiredRingingCalls(): CallRecord[] {

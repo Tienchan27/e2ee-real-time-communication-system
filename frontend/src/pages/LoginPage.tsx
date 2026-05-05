@@ -15,7 +15,7 @@ export function LoginPage() {
     setError("");
 
     if (!identifier || !password) {
-      setError("Please fill in all fields");
+      setError("Vui lòng điền đầy đủ thông tin");
       return;
     }
 
@@ -23,7 +23,7 @@ export function LoginPage() {
       await login(identifier, password);
       navigate("/home");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Login failed";
+      const errorMsg = err instanceof Error ? err.message : "Đăng nhập thất bại";
       setError(errorMsg);
     }
   };
@@ -31,22 +31,24 @@ export function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-container">
-        <h1>E2EE Chat</h1>
-        <h2>Login</h2>
+        <div className="auth-logo">
+          <h1>E2EE Chat</h1>
+        </div>
+        <p className="auth-subtitle">Đăng nhập để tiếp tục</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="identifier">Email or Username</label>
+            <label htmlFor="identifier">Email hoặc tên đăng nhập</label>
             <input
               id="identifier"
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="user@example.com"
+              placeholder="email@example.com"
               disabled={isLoading}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">Mật khẩu</label>
             <input
               id="password"
               type="password"
@@ -59,18 +61,18 @@ export function LoginPage() {
           {(error || authError) && (
             <div className="error-message">{error || authError}</div>
           )}
-          <button type="submit" disabled={isLoading}>
-            {isLoading ? "Logging in..." : "Login"}
+          <button type="submit" className="auth-submit" disabled={isLoading}>
+            {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
-        <p>
-          Don't have an account?{" "}
+        <p className="auth-footer">
+          Chưa có tài khoản?{" "}
           <button
             type="button"
             className="link-button"
             onClick={() => navigate("/register")}
           >
-            Register here
+            Tạo tài khoản
           </button>
         </p>
       </div>
