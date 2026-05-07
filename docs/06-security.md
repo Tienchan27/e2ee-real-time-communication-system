@@ -174,6 +174,19 @@ Lý do chọn scrypt thay bcrypt:
 - Không có từ từ điển (khuyến nghị xác thực client-side).
 - Không bao giờ lưu mật khẩu dưới dạng văn bản; băm ngay lập tức khi đăng ký.
 
+### Điều chế kết nối Socket
+
+- Mỗi IP: tối đa 10 nỗ lực kết nối mỗi phút.
+- Mỗi thiết bị/người dùng: tối đa 5 kết nối websocket hoạt động.
+- Timeout handshake: 10 giây.
+- Trả về lỗi `AUTH_RATE_LIMITED` nếu vượt quá giới hạn.
+
+### Chống spam trong chat
+
+- Bảo vệ tăng đột biến mỗi người dùng: tối đa 100 tin nhắn mỗi phút.
+- Spam lỗi chính tả: kiểm tra các ký tự lặp lại (>10 lần lặp).
+- Xác thực tin nhắn dài: tối đa 10,000 ký tự mỗi tin nhắn.
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
