@@ -151,6 +151,29 @@ Giới hạn tần suất được áp dụng để chống tấn công credenti
 - Trả về `429 Too Many Requests` với header `Retry-After`.
 - Ghi lại vi phạm giới hạn tần suất để giám sát.
 
+### Mã hóa mật khẩu (Password Hashing)
+
+**Thuật toán: Scrypt (không phải bcrypt)**
+
+Lý do chọn scrypt thay bcrypt:
+- Scrypt: chi phí bộ nhớ cao (N=16384), chống tấn công GPU/ASIC hiệu quả hơn.
+- Bcrypt: tốc độ băm dễ dự đoán, có nguy cơ timing attack.
+
+**Cấu hình:**
+- Thuật toán: `scrypt`
+- N: 16384 (bộ nhớ factor, 16 MiB)
+- r: 8 (kích thước khối)
+- p: 1 (song song hóa)
+- keyLen: 64 bytes
+- Salt: 16 bytes ngẫu nhiên (crypto.randomBytes)
+- Định dạng lưu trữ: `scrypt:<base64url-salt>:<base64url-hash>`
+
+**Chính sách mật khẩu:**
+- Tối thiểu 8 ký tự.
+- Ít nhất 1 chữ cái VÀ 1 chữ số.
+- Không có từ từ điển (khuyến nghị xác thực client-side).
+- Không bao giờ lưu mật khẩu dưới dạng văn bản; băm ngay lập tức khi đăng ký.
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
