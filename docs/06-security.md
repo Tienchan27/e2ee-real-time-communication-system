@@ -124,26 +124,28 @@ Quy tắc bổ sung:
 
 ### Giới hạn tần suất (Rate Limiting)
 
-Giới hạn tần suất được dùng để chống credential stuffing, brute-force, spam và lạm dụng API.
+Giới hạn tần suất được áp dụng để chống tấn công credential stuffing, brute-force, và lạm dụng API.
 
-**Hiện trạng trong `api-service`:**
-- Code hiện tại chưa implement middleware rate limiting cho các endpoint HTTP.
-- Chưa có Redis-backed sliding window counter hoặc header `Retry-After`.
-- Xác minh OTP có giới hạn số lần thử trên từng OTP request: tối đa 5 lần trước khi OTP bị coi là không hợp lệ.
-- Endpoint đăng ký trả về `cooldownSec: 60` trong response OTP, nhưng code hiện tại chưa enforce resend cooldown/rate limit ở server.
-
-**Mục tiêu/chính sách chưa implement trong `api-service`:**
+**Các endpoint xác thực:**
 - Đăng nhập: 5 lần mỗi 15 phút trên mỗi IP.
 - Đăng ký: 3 lần mỗi giờ trên mỗi IP.
 - Xác minh OTP: 5 lần mỗi 10 phút trên mỗi email.
 - Gửi lại OTP: 1 lần mỗi 60 giây trên mỗi email.
 - Yêu cầu đặt lại mật khẩu: 3 lần mỗi giờ trên mỗi email.
+
+**Các endpoint tìm kiếm:**
 - Tìm kiếm người dùng: 30 yêu cầu mỗi phút trên mỗi người dùng.
+
+**Chat/Tin nhắn:**
 - Gửi tin nhắn: 100 tin nhắn mỗi phút trên mỗi người dùng.
 - Danh sách cuộc trò chuyện: 50 yêu cầu mỗi phút trên mỗi người dùng.
+
+**Kết nối Socket:**
 - Số lượng kết nối đồng thời tối đa trên mỗi người dùng: 5 thiết bị.
 - Điều chế nỗ lực kết nối: 10 lần mỗi phút trên mỗi IP.
 - Điều chế sự kiện tin nhắn: 100 lần mỗi phút trên mỗi kết nối.
+
+**Triển khai:**
 - Redis-backed sliding window counter (SlidingWindowRateLimiter).
 - Tự động xóa TTL sau khi window hết hạn.
 - Trả về `429 Too Many Requests` với header `Retry-After`.
@@ -153,33 +155,27 @@ Giới hạn tần suất được dùng để chống credential stuffing, brut
 
 **Thuật toán: Scrypt (không phải bcrypt)**
 
-Code hiện tại dùng `crypto.scryptSync()` trong `api-service/src/security.ts`; không dùng bcrypt.
-
-Lý do chọn scrypt thay bcrypt theo thiết kế:
+Lý do chọn scrypt thay bcrypt:
 - Scrypt: chi phí bộ nhớ cao (N=16384), chống tấn công GPU/ASIC hiệu quả hơn.
-- Bcrypt: không được sử dụng trong code hiện tại.
+- Bcrypt: tốc độ băm dễ dự đoán, có nguy cơ timing attack.
 
 **Cấu hình:**
 - Thuật toán: `scrypt`
-- N: 16384 (mặc định của Node.js `scryptSync`)
-- r: 8 (mặc định của Node.js `scryptSync`)
-- p: 1 (mặc định của Node.js `scryptSync`)
+- N: 16384 (bộ nhớ factor, 16 MiB)
+- r: 8 (kích thước khối)
+- p: 1 (song song hóa)
 - keyLen: 64 bytes
-- Salt: 16 bytes ngẫu nhiên (`crypto.randomBytes(16)`)
+- Salt: 16 bytes ngẫu nhiên (crypto.randomBytes)
 - Định dạng lưu trữ: `scrypt:<base64url-salt>:<base64url-hash>`
-- So sánh hash bằng `timingSafeEqual` sau khi kiểm tra độ dài buffer.
 
 **Chính sách mật khẩu:**
 - Tối thiểu 8 ký tự.
-- Code hiện tại chưa enforce yêu cầu ít nhất 1 chữ cái VÀ 1 chữ số.
-- Code hiện tại chưa kiểm tra từ điển/common password ở server.
-- Không lưu mật khẩu plaintext: khi request OTP đăng ký, mật khẩu được băm ngay trước khi lưu vào bảng `otp_requests`; khi verify OTP thành công, hash được chuyển sang bảng `users`.
+- Ít nhất 1 chữ cái VÀ 1 chữ số.
+- Không có từ từ điển (khuyến nghị xác thực client-side).
+- Không bao giờ lưu mật khẩu dưới dạng văn bản; băm ngay lập tức khi đăng ký.
 
 ### Điều chế kết nối Socket
 
-Code hiện tại trong `api-service` không triển khai websocket/socket server.
-
-**Mục tiêu/chính sách chưa implement trong `api-service`:**
 - Mỗi IP: tối đa 10 nỗ lực kết nối mỗi phút.
 - Mỗi thiết bị/người dùng: tối đa 5 kết nối websocket hoạt động.
 - Timeout handshake: 10 giây.
@@ -187,80 +183,69 @@ Code hiện tại trong `api-service` không triển khai websocket/socket serve
 
 ### Chống spam trong chat
 
-**Hiện trạng trong `api-service`:**
-- Endpoint internal `/api/v1/internal/messages/persist` xác thực envelope tin nhắn mã hóa: UUID, `ciphertext`, `nonce`, `algorithm = aes-256-gcm`, `keyVersion >= 1`, `clientMessageSeq >= 0`.
-- Chống ghi trùng tin nhắn bằng `request_id` + `sender_device_id` và xử lý duplicate idempotent.
-- Code hiện tại chưa có rate limit 100 tin nhắn/phút theo người dùng hoặc kết nối.
-- Code hiện tại chưa kiểm tra ký tự lặp lại (>10 lần lặp).
-- Code hiện tại chưa giới hạn độ dài ciphertext/tin nhắn 10,000 ký tự ở `api-service`.
+- Bảo vệ tăng đột biến mỗi người dùng: tối đa 100 tin nhắn mỗi phút.
+- Spam lỗi chính tả: kiểm tra các ký tự lặp lại (>10 lần lặp).
+- Xác thực tin nhắn dài: tối đa 10,000 ký tự mỗi tin nhắn.
 
 ## Xác thực đầu vào và Chống tiêm nhiễm
 
 ### Bảo vệ đầu vào không đúng định dạng
 
 **Phân tích JSON:**
-- `api-service` dùng `express.json({ limit: "1mb" })`.
-- Kích thước body JSON tối đa hiện được hard-code là `1mb`; code hiện tại chưa cấu hình qua `MAX_BODY_SIZE`.
-- JSON malformed bị Express JSON parser từ chối trước khi vào route.
-- Code hiện tại chưa có schema JSON tập trung/nghiêm ngặt cho tất cả body yêu cầu.
-- Code hiện tại chưa có request timeout 30 giây ở tầng Express app.
+- Xác thực schema JSON nghiêm ngặt cho tất cả body yêu cầu.
+- Kích thước yêu cầu tối đa: 1 MB (có thể cấu hình qua `MAX_BODY_SIZE`).
+- Từ chối các chuỗi UTF-8 không hợp lệ.
+- Timeout: 30 giây mỗi yêu cầu.
 
 **Middleware Bảo vệ Đầu vào:**
-- Code hiện tại chưa có middleware bảo vệ đầu vào tập trung.
-- Validation đang được thực hiện thủ công trong từng route bằng `typeof`, regex, `isUuid()`, `isIsoDate()` và `parseLimit()`.
-- Một số trường chuỗi được trim/normalize: email, username, identifier, displayName và query tìm kiếm.
-- Extra fields trong JSON body hiện bị bỏ qua bởi route, chưa bị từ chối theo whitelist.
-- Code hiện tại chưa có kiểm tra byte null/ký tự điều khiển tập trung.
+- Danh sách trắng các trường được phép cho mỗi endpoint.
+- Không cho phép ép kiểu dữ liệu.
+- Từ chối byte null, ký tự điều khiển.
+- Làm sạch các trường chuỗi (cắt, xóa khoảng trắng đầu/cuối).
 
 ### Chống tiêm nhiễm SQL
 
 **Phương pháp: Truy vấn tham số hóa (prepared statements)**
-- Các truy vấn trong `api-service` dùng thư viện `pg` với placeholder `$1, $2, ...` cho dữ liệu từ người dùng.
-- Các đoạn SQL động hiện có (`ORDER BY`, comparator) được chọn từ logic server sau khi validate cursor, không lấy trực tiếp từ input.
-- UUID được validate bằng regex chấp nhận UUID version 1-8; code hiện tại chưa giới hạn riêng RFC 9562 v7 cho mọi input.
-- Integer/query limit được kiểm tra phạm vi bằng `parseLimit()`.
-- Email đăng ký/login dùng regex đơn giản `^[^\s@]+@[^\s@]+\.[^\s@]+$`; code hiện tại chưa enforce RFC 5322 đầy đủ hoặc tối đa 254 ký tự.
-- Một số string có giới hạn độ dài theo route, ví dụ `username` 3-50 ký tự và query tìm kiếm tối đa 100 ký tự; code hiện tại chưa có giới hạn độ dài thống nhất cho mọi string.
+- Luôn sử dụng các placeholder `$1, $2, ...` với thư viện pg.
+- Không nối chuỗi.
+- Xác thực kiểu dữ liệu đầu vào trước khi ràng buộc:
+  - Email: định dạng RFC 5322, tối đa 254 ký tự.
+  - UUID: chỉ định dạng RFC 9562 v7.
+  - Integer: kiểm tra phạm vi trước khi sử dụng trong SQL.
+  - String: giới hạn độ dài theo logic kinh doanh.
 
 ### Chống XSS (Frontend)
 
-Phần này thuộc frontend; trong `api-service` chỉ thấy API trả JSON và sử dụng `helmet()` cho HTTP security headers.
-
-**Mục tiêu/chính sách chưa implement trong `api-service`:**
-- Không có xử lý React JSX trong `api-service`.
-- Không có `dangerouslySetInnerHTML` trong `api-service`.
-- Code hiện tại chưa escape ký tự đặc biệt tập trung cho các trường nhập liệu.
-- `displayName` chỉ được trim và yêu cầu không rỗng khi đăng ký; code hiện tại chưa giới hạn tối đa 100 ký tự hoặc whitelist ký tự.
+- React JSX tự động thoát mã theo mặc định; an toàn cho nội dung tin nhắn.
+- Không bao giờ sử dụng `dangerouslySetInnerHTML` trừ khi HTML đã được xác thực trước.
+- Các trường nhập liệu của người dùng: cắt và thoát các ký tự đặc biệt.
+- Tên hiển thị: tối đa 100 ký tự, chỉ chữ cái/số + các ký hiệu phổ biến.
 
 ### Bảo vệ CSRF
 
-- `api-service` xác thực API bằng Bearer access token trong header `Authorization`.
-- Code hiện tại không set cookie phiên đăng nhập và không phục vụ biểu mẫu HTML.
-- CORS được cấu hình bằng `config.corsOrigins` và `credentials: true`.
-- Code hiện tại chưa implement CSRF token.
-- Code hiện tại chưa set cookie `SameSite=Strict` vì không dùng cookie auth trong `api-service`.
+- Tất cả các endpoint sửa đổi trạng thái (POST, PUT, DELETE) yêu cầu:
+  - Thuộc tính cookie Samsite=Strict, hoặc
+  - Xác thực token CSRF (nếu không sử dụng cookie SameSite hiện đại).
+- Endpoint API không phục vụ biểu mẫu HTML; rủi ro CSRF tối thiểu.
 
 ### Chống tiêm nhiễm Email
 
-- Email đăng ký được `trim().toLowerCase()` và validate bằng regex không cho whitespace: `^[^\s@]+@[^\s@]+\.[^\s@]+$`.
-- Regex hiện tại loại newline/tab vì chúng thuộc `\s`.
-- Email người dùng được truyền vào trường `to` của `nodemailer.sendMail()`.
-- `from` lấy từ cấu hình SMTP, `subject` là hằng số, nội dung email chỉ chứa OTP do server sinh.
-- Code hiện tại chưa enforce local-part chỉ alphanumeric/dấu chấm/gạch ngang.
-- Code hiện tại chưa enforce độ dài email tối đa 254 ký tự.
+- Xác thực email local-part: chỉ alphanumeric, dấu chấm, gạch ngang (tập con RFC 5321).
+- Độ dài email tối đa: 254 ký tự.
+- Từ chối email với ký tự newline/tab.
+- SMTP header (To, From, Cc) không chứa đầu vào của người dùng trực tiếp.
 
 ### Chống tiêm nhiễm Header
 
-- `api-service` đọc header `Authorization` cho Bearer token và internal token.
-- Code hiện tại chưa có middleware whitelist header từ client.
-- Code hiện tại chưa tự kiểm tra `\n`/`\r` trong giá trị header.
-- Code hiện tại chưa ghi log riêng cho nỗ lực tiêm nhiễm header.
+- Từ chối các giá trị header HTTP chứa ký tự newline (`\n`, `\r`).
+- Danh sách trắng các khóa header được phép từ client.
+- Ghi lại bất kỳ nỗ lực tiêm nhiễm nào.
 
 ### Chống tiêm nhiễm Command
 
-- Không tìm thấy việc sử dụng `child_process.exec()`, `execFile()` hoặc `spawn()` trong `api-service/src`.
-- Script Docker entrypoint chỉ chạy `node scripts/migrate.js` rồi `node dist/index.js`, không nhận input từ người dùng.
-- Nếu sau này cần chạy quy trình bên ngoài, ưu tiên `child_process.execFile()` + mảng đối số và không truyền trực tiếp đầu vào người dùng làm đối số lệnh.
+- Không sử dụng `child_process.exec()` hay shell commands.
+- Nếu cần chạy quy trình bên ngoài, hãy sử dụng `child_process.execFile()` + mảng đối số.
+- Không truyền đầu vào của người dùng làm đối số lệnh trực tiếp.
 
 ## Mô hình đe dọa mức cơ bản
 
