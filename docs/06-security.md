@@ -164,8 +164,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 
 ### Chống XSS (Frontend)
 
-### Bảo vệ CSRF
-
 ### Chống tiêm nhiễm Email
 
 - Email đăng ký được `trim().toLowerCase()` và validate bằng regex `^[^\s@]+@[^\s@]+\.[^\s@]+$`.
