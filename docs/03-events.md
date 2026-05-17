@@ -1,14 +1,22 @@
 # 03 - Hợp Đồng Sự Kiện Realtime
 
+| Meta | Giá trị |
+|------|---------|
+| Contract-Version | 1.0.0 |
+| Status | FROZEN |
+| Frozen-At | 2026-05-16 |
+| Naming | [`00-glossary-and-naming.md`](00-glossary-and-naming.md) |
+
 ## Mục tiêu
 
 Tài liệu này định nghĩa toàn bộ sự kiện Socket.IO để frontend, realtime và API triển khai thống nhất, không lệch hợp đồng.
 
 ## Quy tắc toàn cục
 
+- Naming và glossary: [`00-glossary-and-naming.md`](00-glossary-and-naming.md).
 - Quy ước tên: `domain:action` (ví dụ `chat:send`).
 - Mọi event do client khởi tạo bắt buộc có:
-  - `requestId: string(uuid)`
+  - `requestId: string(uuid-v7)`
   - `timestamp: string(iso8601)`
 - Xác thực socket chỉ thực hiện tại handshake:
   - Client phải gửi access token ở bước handshake.
@@ -28,10 +36,10 @@ Tài liệu này định nghĩa toàn bộ sự kiện Socket.IO để frontend,
 ## Envelope chung
 
 ```txt
-requestId: string(uuid) [required]
+requestId: string(uuid-v7) [required]
 eventVersion: number [required]
-senderUserId: string(uuid) [required, server-derived-from-auth-context]
-senderDeviceId: string(uuid) [required]
+senderUserId: string(uuid-v7) [required, server-derived-from-auth-context]
+senderDeviceId: string(uuid-v7) [required]
 timestamp: string(iso8601) [required]
 payload: object [required]
 ```
@@ -46,9 +54,9 @@ Lưu ý triển khai:
 ### system:ack
 
 ```txt
-requestId: string(uuid) [required]
+requestId: string(uuid-v7) [required]
 status: string [required, fixed="ok"]
-serverEventId: string(uuid) [required]
+serverEventId: string(uuid-v7) [required]
 serverTimestamp: string(iso8601) [required]
 meta: object [optional]
 ```
@@ -56,7 +64,7 @@ meta: object [optional]
 ### system:error
 
 ```txt
-requestId: string(uuid) [required]
+requestId: string(uuid-v7) [required]
 status: string [required, fixed="error"]
 errorCode: string [required]
 errorMessage: string [required]
@@ -73,7 +81,7 @@ details: object [optional]
 
 Payload:
 ```txt
-targets: array<string(uuid)> [required]
+targets: array<string(uuid-v7)> [required]
 ```
 
 ### presence:update
@@ -83,7 +91,7 @@ targets: array<string(uuid)> [required]
 
 Payload:
 ```txt
-userId: string(uuid) [required]
+userId: string(uuid-v7) [required]
 status: string [required, online|offline|away]
 lastSeenAt: string(iso8601) [optional]
 ```
@@ -97,7 +105,8 @@ lastSeenAt: string(iso8601) [optional]
 
 Payload:
 ```txt
-messageId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
+messageId: string(uuid-v7) [required]
 ciphertext: string(base64) [required]
 nonce: string(base64) [required]
 algorithm: string [required, aes-256-gcm]
@@ -117,10 +126,10 @@ Hành vi khi thành công:
 
 Payload:
 ```txt
-messageId: string(uuid) [required]
-conversationId: string(uuid) [required]
-senderUserId: string(uuid) [required]
-senderDeviceId: string(uuid) [required]
+messageId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
+senderUserId: string(uuid-v7) [required]
+senderDeviceId: string(uuid-v7) [required]
 ciphertext: string(base64) [required]
 nonce: string(base64) [required]
 algorithm: string [required]
@@ -135,7 +144,8 @@ createdAt: string(iso8601) [required]
 
 Payload:
 ```txt
-messageId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
+messageId: string(uuid-v7) [required]
 deliveredAt: string(iso8601) [required]
 ```
 
@@ -146,8 +156,8 @@ deliveredAt: string(iso8601) [required]
 
 Payload:
 ```txt
-conversationId: string(uuid) [required]
-lastReadMessageId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
+lastReadMessageId: string(uuid-v7) [required]
 readAt: string(iso8601) [required]
 ```
 
@@ -157,18 +167,18 @@ readAt: string(iso8601) [required]
 
 Payload:
 ```txt
-conversationId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
 curve: string [required, x25519|p256]
 publicKey: string(base64) [required]
-sessionProposalId: string(uuid) [required]
+sessionProposalId: string(uuid-v7) [required]
 ```
 
 ### key:exchange:response
 
 Payload:
 ```txt
-conversationId: string(uuid) [required]
-sessionProposalId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
+sessionProposalId: string(uuid-v7) [required]
 publicKey: string(base64) [required]
 accepted: boolean [required]
 ```
@@ -177,7 +187,7 @@ accepted: boolean [required]
 
 Payload:
 ```txt
-conversationId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
 newKeyVersion: number [required]
 reason: string [required, message_count|time_window|manual]
 senderEphemeralPublicKey: string(base64) [required]
@@ -187,7 +197,7 @@ senderEphemeralPublicKey: string(base64) [required]
 
 Payload:
 ```txt
-conversationId: string(uuid) [required]
+conversationId: string(uuid-v7) [required]
 expectedKeyVersion: number [required]
 receivedKeyVersion: number [required]
 reason: string [required]
@@ -199,8 +209,8 @@ reason: string [required]
 
 Payload:
 ```txt
-callId: string(uuid) [required]
-conversationId: string(uuid) [required]
+callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 callType: string [required, voice|video]
 ```
 
@@ -208,9 +218,9 @@ callType: string [required, voice|video]
 
 Payload:
 ```txt
-callId: string(uuid) [required]
-conversationId: string(uuid) [required]
-callerUserId: string(uuid) [required]
+callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
+callerUserId: string(uuid-v7) [required]
 callType: string [required]
 expiresAt: string(iso8601) [required]
 ```
@@ -219,8 +229,8 @@ expiresAt: string(iso8601) [required]
 
 Payload:
 ```txt
-callId: string(uuid) [required]
-conversationId: string(uuid) [required]
+callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 reason: string [optional]
 ```
 
@@ -228,7 +238,7 @@ reason: string [optional]
 
 Payload:
 ```txt
-callId: string(uuid) [required]
+callId: string(uuid-v7) [required]
 sdp: string [required]
 sdpType: string [required, offer|answer]
 ```
@@ -237,7 +247,7 @@ sdpType: string [required, offer|answer]
 
 Payload:
 ```txt
-callId: string(uuid) [required]
+callId: string(uuid-v7) [required]
 candidate: object [required]
 ```
 
@@ -254,7 +264,7 @@ candidate: object [required]
 
 - Nếu cả hai bên cùng phát `key:rotate`, chọn bản ghi có:
   1. `newKeyVersion` lớn hơn.
-  2. Nếu bằng nhau, ưu tiên `senderUserId` có giá trị UUID nhỏ hơn theo thứ tự từ điển.
+  2. Nếu bằng nhau, ưu tiên `senderUserId` có giá trị UUID v7 nhỏ hơn theo thứ tự từ điển (canonical lowercase).
 - Bên bị loại phải đồng bộ lại khóa và gửi `system:ack` cho rotate được chấp nhận.
 
 ## Mã lỗi tối thiểu
@@ -268,10 +278,20 @@ candidate: object [required]
 - `CALL_STATE_CONFLICT`
 - `INTERNAL_ERROR`
 
+## REST ↔ Socket error mapping
+
+Bảng map subset giữa REST `error.code` và socket `errorCode`: xem mục 7 trong [`00-glossary-and-naming.md`](00-glossary-and-naming.md).
+
 ## Trách nhiệm
 
 - Phụ trách Realtime: triển khai transport và event routing.
 - Phụ trách API: triển khai tác vụ lưu trạng thái message/receipt.
 - Phụ trách FE: triển khai handler sự kiện và retry phía client.
 - System Owner: kiểm tra tương thích hợp đồng và chốt version.
+
+## Changelog
+
+| Version | Date | Author | Change |
+|---------|------|--------|--------|
+| 1.0.0 | 2026-05-16 | System Owner | Initial freeze V1: thêm `conversationId` vào `chat:send` và `chat:delivered`; UUID v7; FROZEN |
 

@@ -4,6 +4,10 @@
 
 Tài liệu này chốt kiến trúc hệ thống để cả nhóm có cùng cách hiểu về ranh giới dịch vụ, luồng dữ liệu, bảo mật và hướng mở rộng.
 
+## Đọc trước
+
+- Thuật ngữ và quy ước naming toàn dự án: [`00-glossary-and-naming.md`](00-glossary-and-naming.md).
+
 ## Phạm vi
 
 - Trong phạm vi:
