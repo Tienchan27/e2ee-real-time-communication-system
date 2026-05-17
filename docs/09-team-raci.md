@@ -169,6 +169,38 @@ ETA mới:
 - Mọi thay đổi contract phải được ghi vào file tài liệu tương ứng, không chốt bằng lời nói.
 - Mọi quyết định kỹ thuật phải nằm trong PR comment hoặc Decision Log.
 - Không xóa lịch sử quyết định cũ, chỉ append.
+- Thuật ngữ và naming: [`00-glossary-and-naming.md`](00-glossary-and-naming.md).
+
+---
+
+## Contract freeze V1
+
+### Phạm vi frozen
+
+- Toàn bộ [`02-api.md`](02-api.md) (REST Contract-Version **1.0.0**, Status **FROZEN**).
+- Toàn bộ [`03-events.md`](03-events.md) (Socket Contract-Version **1.0.0**, Status **FROZEN**).
+- Không áp dụng freeze cho `04-flow.md`, `05-e2ee.md` ở giai đoạn này (SYS-04+).
+
+### Quy tắc thay đổi sau FROZEN
+
+| Loại thay đổi | Cho phép? | Quy trình |
+|---------------|-----------|-----------|
+| Typo, ví dụ, comment (không đổi shape) | Có | PR docs; System Owner review |
+| Thêm field **optional** | Có | PR + label `contract-additive`; owner domain approve (API hoặc Realtime) |
+| Thêm endpoint REST hoặc event socket mới | Có | Cùng quy trình additive; không sửa field cũ |
+| Đổi tên / xóa / đổi kiểu field **required** | Không | PR + label `contract-breaking`; System Owner + API Owner (REST) hoặc + Realtime Owner (events); bump Contract-Version |
+| Đổi semantics (optional → required) | Không | Coi như breaking |
+
+### Duyệt freeze và breaking
+
+- **Chốt freeze V1:** System Owner + API Owner + Realtime Owner (FE Owner informed, comment trên PR).
+- **Breaking change:** theo bảng [Quyền ra quyết định](#quyền-ra-quyết-định) ở trên; cập nhật changelog trong `02` hoặc `03`.
+- **Status doc:** `DRAFT` → `FROZEN` sau sign-off team hoặc 24h không objection trên PR freeze.
+
+### Nhãn PR gợi ý
+
+- `contract-additive` — thêm field/endpoint/event, tương thích ngược.
+- `contract-breaking` — thay đổi required hoặc semantics; cần bump version.
 
 ---
 

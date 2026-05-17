@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  compose-validate-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose (development)
+        run: |
+          cp .env.example .env
+          cp api-service/.env.example api-service/.env
+          cp realtime-service/.env.example realtime-service/.env
+          cp frontend/.env.example frontend/.env
+          docker compose config
+
+  compose-validate-prod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose (runtime / prod env)
+        run: |
+          cp .env.prod.example .env.prod
+          cp api-service/.env.example api-service/.env
+          cp realtime-service/.env.example realtime-service/.env
+          cp frontend/.env.example frontend/.env
+          docker compose -f compose.yaml --env-file .env.prod config
+
+  compose-build:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images when package.json exists
+        run: |
+          cp .env.example .env
+          missing=0
+          for dir in api-service realtime-service frontend; do
+            if [ ! -f "$dir/package.json" ]; then
+              echo "Skip build: $dir/package.json missing"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            docker compose build
+          else
+            echo "Build skipped until all services have package.json"
+          fi

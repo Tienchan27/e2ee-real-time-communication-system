@@ -19,8 +19,8 @@ Tài liệu này gom lại toàn bộ task từ `10-roadmap.md` theo chức năn
 
 | Task ID | Task | Owner | Phụ thuộc | Ước lượng | Trạng thái | Deadline | Ghi chú |
 |---|---|---|---|---|---|---|---|
-| SYS-01 | Chốt glossary và quy ước naming toàn dự án | System Owner | Không | S | Todo |  |  |
-| SYS-02 | Chốt rule freeze cho API/Event contract | System Owner | SYS-01 | S | Todo |  |  |
+| SYS-01 | Chốt glossary và quy ước naming toàn dự án | System Owner | Không | S | Done | 2026-05-16 | `00-glossary-and-naming.md` |
+| SYS-02 | Chốt rule freeze cho API/Event contract | System Owner | SYS-01 | S | Done | 2026-05-16 | `02`/`03` v1.0.0 FROZEN |
 | SYS-03 | Chốt policy socket auth (handshake-only) | System Owner | SYS-02,API-09,RT-02 | XS | Todo |  |  |
 | API-01 | Thiết kế schema `users` | API Owner | Không | S | Todo |  |  |
 | API-02 | Thiết kế schema `conversations` | API Owner | API-01 | S | Todo |  |  |
@@ -158,9 +158,9 @@ Tài liệu này gom lại toàn bộ task từ `10-roadmap.md` theo chức năn
 |---|---|---|---|---|---|---|---|
 | SYS-09 | Review consistency `02`-`03`-`04`-`05` | System Owner | SYS-03,SYS-06,SYS-08 | M | Todo |  | Lặp theo chu kỳ |
 | SYS-10 | Thiết kế checklist kiểm thử tích hợp E2E | System Owner | SYS-09 | S | Todo |  | Theo `08-qa-test-plan.md` |
-| SYS-11 | Thiết kế workflow CI | System Owner | SYS-09,API-28,RT-28,FE-28 | M | Todo |  |  |
+| SYS-11 | Thiết kế workflow CI | System Owner | SYS-09,API-28,RT-28,FE-28 | M | In Progress |  | `.github/workflows/ci.yml` — compose validate |
 | SYS-12 | Thiết kế workflow CD + smoke test | System Owner | SYS-11,API-26,RT-26 | M | Todo |  |  |
-| SYS-13 | Chốt secrets matrix theo môi trường | System Owner | SYS-11,API-10,RT-02 | S | Todo |  |  |
+| SYS-13 | Chốt secrets matrix theo môi trường | System Owner | SYS-11,API-10,RT-02 | S | In Progress |  | Root + prod + service `.env.example` |
 | SYS-14 | Triển khai staging | System Owner | SYS-12,SYS-13 | M | Todo |  |  |
 | SYS-15 | Triển khai production | System Owner | SYS-14 | M | Todo |  |  |
 | SYS-16 | Chốt runbook demo + rollback | System Owner | SYS-15 | S | Todo |  |  |

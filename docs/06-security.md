@@ -6,14 +6,13 @@ Thiết lập baseline bảo mật đúng và đủ cho hệ thống có triển
 
 ## Định danh và ID
 
-- User ID: UUID v7 preferred (or v4 fallback).
-- Conversation ID: UUID.
-- Message ID: UUID.
-- Request/Event ID: UUID for traceability and idempotency.
+- Mọi ID public (`userId`, `conversationId`, `messageId`, `requestId`, `sessionId`, `deviceId`, `callId`, …): **UUID v7** (RFC 9562). Chi tiết: [`00-glossary-and-naming.md`](00-glossary-and-naming.md).
+- Request/Event ID: UUID v7 cho traceability và idempotency.
 
 Quy tắc:
 - ID phải bất biến sau khi tạo.
 - ID không được mã hóa thông tin riêng tư.
+- Không dùng integer sequential làm public identifier.
 
 ## Thông tin xác thực và mật khẩu
 
@@ -36,9 +35,9 @@ Quy tắc:
 
 Baseline claim:
 ```txt
-sub: string(uuid) [required]
-sid: string(uuid) [required]
-deviceId: string(uuid) [required]
+sub: string(uuid-v7) [required]
+sid: string(uuid-v7) [required]
+deviceId: string(uuid-v7) [required]
 iat: number [required]
 exp: number [required]
 ```
