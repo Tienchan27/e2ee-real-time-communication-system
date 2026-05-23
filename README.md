@@ -7,16 +7,24 @@ End-to-end encrypted chat and voice/video (1-1) — microservice stack.
 - Docker Desktop (Compose v2)
 - Git
 
+## Local env (before first `docker compose up`)
+
+```powershell
+# From repo root — creates .env files only if missing (does not overwrite)
+.\scripts\setup-env.ps1
+```
+
+Ensure `api-service/.env` uses host **`postgres`** in `DATABASE_URL` (not `localhost`) when running inside Compose.
+
 ## Quick start (local dev)
 
 ```powershell
-# From repo root — copy .env.example → .env (root + từng service) trước khi up
 docker compose up --build
 ```
 
 Open **http://localhost** (gateway). API: `http://localhost/api/v1/...`, Socket.IO: `http://localhost/socket.io/`.
 
-Compose loads `compose.yaml` + `compose.override.yaml` (bind-mount + `npm run dev`).
+Compose loads `compose.yaml` + `compose.override.yaml` (bind-mount + `npm run dev`)
 
 ## Production-like (local or VM)
 
@@ -52,6 +60,8 @@ Before full stack healthchecks pass, each owner must deliver:
 | **Frontend** | Vite app, `npm run dev` on `0.0.0.0:5173`, `npm run build` → `dist/`, `VITE_API_BASE_URL=/api/v1`, `VITE_SOCKET_BASE_URL=` (empty) | Gateway dev proxies `/` → `frontend:5173` |
 
 DevOps scope: compose, gateway, nginx, Dockerfiles, env templates — not application UI or business logic.
+
+Minimal boot scaffold (health + Socket.IO listen + Vite placeholder) is in place; owners add business routes, socket auth, and UI.
 
 ## Architecture (local)
 
