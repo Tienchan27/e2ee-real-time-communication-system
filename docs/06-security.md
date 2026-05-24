@@ -20,7 +20,6 @@ Quy tắc:
 - Never store plaintext password.
 - Enforce password policy:
   - min 8 chars.
-  - at least 1 letter and 1 number.
 
 ## JWT và phiên đăng nhập
 
@@ -47,20 +46,16 @@ Issuer: **API Service**. Trên wire, claim phiên là `sid` (không alias `sessi
 - OTP length: 6 digits.
 - OTP expiry: 10 minutes (code: `NOW() + INTERVAL '10 minutes'`).
 - Max attempts: 5.
-- Cooldown resend: 60 seconds.
 - OTP gửi qua email bằng SMTP (Nodemailer). SMTP bắt buộc cấu hình đủ 5 biến: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` — thiếu → endpoint trả 503.
 - OTP code dùng `crypto.randomInt` (CSPRNG). Hash bằng `scrypt` trước khi lưu DB.
 - Trong `NODE_ENV=development`, response còn trả thêm `otpCode` để test không cần mailbox thật (chỉ khi email đã gửi thành công).
-- Per email rate limit and per IP rate limit required.
 - Source of truth cho OTP records là PostgreSQL.
 
 ## Redis policy (v1)
 
 - Redis không là nguồn dữ liệu chuẩn cho OTP/session/token ở v1.
-- Redis chỉ dùng cho dữ liệu tạm:
-  - rate-limit counters;
-  - cache TTL ngắn;
-  - realtime pub/sub adapter khi scale.
+- `api-service` hiện không dùng Redis.
+- Redis chỉ dành cho dữ liệu tạm ở các service cần cache/pub-sub khi scale.
 - Nếu Redis bị mất dữ liệu, hệ thống vẫn khôi phục được trạng thái nghiệp vụ chính từ PostgreSQL.
 
 ## Quyền riêng tư khi tìm người dùng
@@ -124,128 +119,65 @@ Quy tắc bổ sung:
 
 ### Giới hạn tần suất (Rate Limiting)
 
-Giới hạn tần suất được áp dụng để chống tấn công credential stuffing, brute-force, và lạm dụng API.
-
-**Các endpoint xác thực:**
-- Đăng nhập: 5 lần mỗi 15 phút trên mỗi IP.
-- Đăng ký: 3 lần mỗi giờ trên mỗi IP.
-- Xác minh OTP: 5 lần mỗi 10 phút trên mỗi email.
-- Gửi lại OTP: 1 lần mỗi 60 giây trên mỗi email.
-- Yêu cầu đặt lại mật khẩu: 3 lần mỗi giờ trên mỗi email.
-
-**Các endpoint tìm kiếm:**
-- Tìm kiếm người dùng: 30 yêu cầu mỗi phút trên mỗi người dùng.
-
-**Chat/Tin nhắn:**
-- Gửi tin nhắn: 100 tin nhắn mỗi phút trên mỗi người dùng.
-- Danh sách cuộc trò chuyện: 50 yêu cầu mỗi phút trên mỗi người dùng.
-
-**Kết nối Socket:**
-- Số lượng kết nối đồng thời tối đa trên mỗi người dùng: 5 thiết bị.
-- Điều chế nỗ lực kết nối: 10 lần mỗi phút trên mỗi IP.
-- Điều chế sự kiện tin nhắn: 100 lần mỗi phút trên mỗi kết nối.
-
-**Triển khai:**
-- Redis-backed sliding window counter (SlidingWindowRateLimiter).
-- Tự động xóa TTL sau khi window hết hạn.
-- Trả về `429 Too Many Requests` với header `Retry-After`.
-- Ghi lại vi phạm giới hạn tần suất để giám sát.
-
 ### Mã hóa mật khẩu (Password Hashing)
 
-**Thuật toán: Scrypt (không phải bcrypt)**
-
-Lý do chọn scrypt thay bcrypt:
-- Scrypt: chi phí bộ nhớ cao (N=16384), chống tấn công GPU/ASIC hiệu quả hơn.
-- Bcrypt: tốc độ băm dễ dự đoán, có nguy cơ timing attack.
+Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-service/src/security.ts`; code hiện tại không dùng bcrypt.
 
 **Cấu hình:**
 - Thuật toán: `scrypt`
-- N: 16384 (bộ nhớ factor, 16 MiB)
-- r: 8 (kích thước khối)
-- p: 1 (song song hóa)
+- N: 16384 (mặc định của Node.js)
+- r: 8 (mặc định của Node.js)
+- p: 1 (mặc định của Node.js)
 - keyLen: 64 bytes
-- Salt: 16 bytes ngẫu nhiên (crypto.randomBytes)
+- Salt: 16 bytes ngẫu nhiên (`crypto.randomBytes(16)`)
 - Định dạng lưu trữ: `scrypt:<base64url-salt>:<base64url-hash>`
+- So sánh hash bằng `timingSafeEqual` sau khi kiểm tra độ dài buffer.
 
 **Chính sách mật khẩu:**
 - Tối thiểu 8 ký tự.
-- Ít nhất 1 chữ cái VÀ 1 chữ số.
-- Không có từ từ điển (khuyến nghị xác thực client-side).
-- Không bao giờ lưu mật khẩu dưới dạng văn bản; băm ngay lập tức khi đăng ký.
+- Khi đăng ký, mật khẩu được băm trước khi lưu vào `otp_requests`.
+- Khi xác minh OTP thành công, hash được chuyển sang bảng `users`; không lưu mật khẩu plaintext.
 
 ### Điều chế kết nối Socket
 
-- Mỗi IP: tối đa 10 nỗ lực kết nối mỗi phút.
-- Mỗi thiết bị/người dùng: tối đa 5 kết nối websocket hoạt động.
-- Timeout handshake: 10 giây.
-- Trả về lỗi `AUTH_RATE_LIMITED` nếu vượt quá giới hạn.
-
 ### Chống spam trong chat
-
-- Bảo vệ tăng đột biến mỗi người dùng: tối đa 100 tin nhắn mỗi phút.
-- Spam lỗi chính tả: kiểm tra các ký tự lặp lại (>10 lần lặp).
-- Xác thực tin nhắn dài: tối đa 10,000 ký tự mỗi tin nhắn.
 
 ## Xác thực đầu vào và Chống tiêm nhiễm
 
 ### Bảo vệ đầu vào không đúng định dạng
 
 **Phân tích JSON:**
-- Xác thực schema JSON nghiêm ngặt cho tất cả body yêu cầu.
-- Kích thước yêu cầu tối đa: 1 MB (có thể cấu hình qua `MAX_BODY_SIZE`).
-- Từ chối các chuỗi UTF-8 không hợp lệ.
-- Timeout: 30 giây mỗi yêu cầu.
+- `api-service` dùng `express.json({ limit: "1mb" })`.
+- JSON không hợp lệ bị Express JSON parser từ chối trước khi vào route.
 
 **Middleware Bảo vệ Đầu vào:**
-- Danh sách trắng các trường được phép cho mỗi endpoint.
-- Không cho phép ép kiểu dữ liệu.
-- Từ chối byte null, ký tự điều khiển.
-- Làm sạch các trường chuỗi (cắt, xóa khoảng trắng đầu/cuối).
+- Validation hiện được thực hiện thủ công theo từng route bằng `typeof`, regex, `isUuid()`, `isIsoDate()` và `parseLimit()`.
+- Các trường như email, username, identifier, displayName và query tìm kiếm được trim/normalize theo route.
 
 ### Chống tiêm nhiễm SQL
 
 **Phương pháp: Truy vấn tham số hóa (prepared statements)**
-- Luôn sử dụng các placeholder `$1, $2, ...` với thư viện pg.
-- Không nối chuỗi.
-- Xác thực kiểu dữ liệu đầu vào trước khi ràng buộc:
-  - Email: định dạng RFC 5322, tối đa 254 ký tự.
-  - UUID: chỉ định dạng RFC 9562 v7.
-  - Integer: kiểm tra phạm vi trước khi sử dụng trong SQL.
-  - String: giới hạn độ dài theo logic kinh doanh.
+- Các truy vấn dùng thư viện `pg` với placeholder `$1, $2, ...` cho dữ liệu từ người dùng.
+- UUID được kiểm tra bằng `isUuid()` trước khi đưa vào truy vấn.
+- Query limit được kiểm tra phạm vi bằng `parseLimit()`.
+- Các đoạn SQL động hiện có như hướng sắp xếp/cursor comparator được chọn từ logic server, không lấy trực tiếp từ input.
 
 ### Chống XSS (Frontend)
 
-- React JSX tự động thoát mã theo mặc định; an toàn cho nội dung tin nhắn.
-- Không bao giờ sử dụng `dangerouslySetInnerHTML` trừ khi HTML đã được xác thực trước.
-- Các trường nhập liệu của người dùng: cắt và thoát các ký tự đặc biệt.
-- Tên hiển thị: tối đa 100 ký tự, chỉ chữ cái/số + các ký hiệu phổ biến.
-
 ### Bảo vệ CSRF
-
-- Tất cả các endpoint sửa đổi trạng thái (POST, PUT, DELETE) yêu cầu:
-  - Thuộc tính cookie Samsite=Strict, hoặc
-  - Xác thực token CSRF (nếu không sử dụng cookie SameSite hiện đại).
-- Endpoint API không phục vụ biểu mẫu HTML; rủi ro CSRF tối thiểu.
 
 ### Chống tiêm nhiễm Email
 
-- Xác thực email local-part: chỉ alphanumeric, dấu chấm, gạch ngang (tập con RFC 5321).
-- Độ dài email tối đa: 254 ký tự.
-- Từ chối email với ký tự newline/tab.
-- SMTP header (To, From, Cc) không chứa đầu vào của người dùng trực tiếp.
+- Email đăng ký được `trim().toLowerCase()` và validate bằng regex `^[^\s@]+@[^\s@]+\.[^\s@]+$`.
+- Regex email hiện tại loại bỏ whitespace, bao gồm newline/tab.
+- OTP email được gửi bằng `nodemailer`; `from` lấy từ cấu hình SMTP, `subject` là hằng số, nội dung email chỉ chứa OTP do server sinh.
 
 ### Chống tiêm nhiễm Header
 
-- Từ chối các giá trị header HTTP chứa ký tự newline (`\n`, `\r`).
-- Danh sách trắng các khóa header được phép từ client.
-- Ghi lại bất kỳ nỗ lực tiêm nhiễm nào.
-
 ### Chống tiêm nhiễm Command
 
-- Không sử dụng `child_process.exec()` hay shell commands.
-- Nếu cần chạy quy trình bên ngoài, hãy sử dụng `child_process.execFile()` + mảng đối số.
-- Không truyền đầu vào của người dùng làm đối số lệnh trực tiếp.
+- Không có sử dụng `child_process.exec()`, `execFile()` hoặc `spawn()` trong `api-service/src`.
+- Script entrypoint chỉ chạy migration và server bằng Node, không truyền input người dùng vào shell command.
 
 ## Mô hình đe dọa mức cơ bản
 
@@ -261,7 +193,6 @@ Lý do chọn scrypt thay bcrypt:
 
 ## Checklist nghiệm thu bảo mật
 
-- Auth endpoints have rate limit.
 - Password hashes validated against policy.
 - Token rotation test passes.
 - OTP expiry/attempt lock tests pass.
