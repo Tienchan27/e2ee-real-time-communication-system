@@ -115,9 +115,7 @@ Quy tắc bổ sung:
 - Security logs:
   - giữ tối thiểu 30 ngày.
 
-## Chống lạm dụng
 
-### Giới hạn tần suất (Rate Limiting)
 
 ### Mã hóa mật khẩu (Password Hashing)
 
