@@ -140,9 +140,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 
 ### Điều chế kết nối Socket
 
-### Chống spam trong chat
-
-
 ### Bảo vệ đầu vào không đúng định dạng
 
 **Phân tích JSON:**
