@@ -136,7 +136,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Khi đăng ký, mật khẩu được băm trước khi lưu vào `otp_requests`.
 - Khi xác minh OTP thành công, hash được chuyển sang bảng `users`; không lưu mật khẩu plaintext.
 
-### Điều chế kết nối Socket
 
 ### Bảo vệ đầu vào không đúng định dạng
 
