@@ -162,7 +162,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Query limit được kiểm tra phạm vi bằng `parseLimit()`.
 - Các đoạn SQL động hiện có như hướng sắp xếp/cursor comparator được chọn từ logic server, không lấy trực tiếp từ input.
 
-### Chống XSS (Frontend)
 
 ### Chống tiêm nhiễm Email
 
