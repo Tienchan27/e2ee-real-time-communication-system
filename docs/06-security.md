@@ -203,6 +203,17 @@ Lý do chọn scrypt thay bcrypt:
 - Từ chối byte null, ký tự điều khiển.
 - Làm sạch các trường chuỗi (cắt, xóa khoảng trắng đầu/cuối).
 
+### Chống tiêm nhiễm SQL
+
+**Phương pháp: Truy vấn tham số hóa (prepared statements)**
+- Luôn sử dụng các placeholder `$1, $2, ...` với thư viện pg.
+- Không nối chuỗi.
+- Xác thực kiểu dữ liệu đầu vào trước khi ràng buộc:
+  - Email: định dạng RFC 5322, tối đa 254 ký tự.
+  - UUID: chỉ định dạng RFC 9562 v7.
+  - Integer: kiểm tra phạm vi trước khi sử dụng trong SQL.
+  - String: giới hạn độ dài theo logic kinh doanh.
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
