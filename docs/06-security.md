@@ -214,6 +214,20 @@ Lý do chọn scrypt thay bcrypt:
   - Integer: kiểm tra phạm vi trước khi sử dụng trong SQL.
   - String: giới hạn độ dài theo logic kinh doanh.
 
+### Chống XSS (Frontend)
+
+- React JSX tự động thoát mã theo mặc định; an toàn cho nội dung tin nhắn.
+- Không bao giờ sử dụng `dangerouslySetInnerHTML` trừ khi HTML đã được xác thực trước.
+- Các trường nhập liệu của người dùng: cắt và thoát các ký tự đặc biệt.
+- Tên hiển thị: tối đa 100 ký tự, chỉ chữ cái/số + các ký hiệu phổ biến.
+
+### Bảo vệ CSRF
+
+- Tất cả các endpoint sửa đổi trạng thái (POST, PUT, DELETE) yêu cầu:
+  - Thuộc tính cookie Samsite=Strict, hoặc
+  - Xác thực token CSRF (nếu không sử dụng cookie SameSite hiện đại).
+- Endpoint API không phục vụ biểu mẫu HTML; rủi ro CSRF tối thiểu.
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
