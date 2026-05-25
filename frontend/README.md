@@ -15,7 +15,7 @@ Note: This will impact Vite dev & build performances.
 
 ## Expanding the ESLint configuration
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+If you are developing production application, we recommend updating the configuration to enable type-aware lint rules:
 
 ```js
 export default defineConfig([
