@@ -3,7 +3,11 @@ export type AppConfig = {
   nodeEnv: string;
   socketOrigins: string[];
   jwtAccessSecret: string;
+  apiInternalBaseUrl: string;
+  apiInternalToken: string;
   allowDevSocketAuth: boolean;
+  allowDevConversationAccess: boolean;
+  allowDevMessagePersist: boolean;
 };
 
 function readCsvEnv(value: string | undefined, fallback: string): string[] {
@@ -25,7 +29,14 @@ export function loadConfig(): AppConfig {
       "http://localhost",
     ),
     jwtAccessSecret: process.env.JWT_ACCESS_SECRET || "",
+    apiInternalBaseUrl: process.env.API_INTERNAL_BASE_URL || "http://api-service:3000",
+    apiInternalToken: process.env.API_INTERNAL_TOKEN || "",
     // Cho phep dung token dev khi API login/JWT chua hoan thien.
     allowDevSocketAuth: nodeEnv !== "production",
+    // Tam thoi cho phep join conversation o local khi API membership chua co.
+    allowDevConversationAccess:
+      nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS !== "false",
+    // Tam thoi fake persist o local khi API-19 chua co endpoint internal persist.
+    allowDevMessagePersist: nodeEnv !== "production" && process.env.ALLOW_DEV_MESSAGE_PERSIST === "true",
   };
 }

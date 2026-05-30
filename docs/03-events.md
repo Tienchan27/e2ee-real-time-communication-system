@@ -29,6 +29,7 @@ Tài liệu này định nghĩa toàn bộ sự kiện Socket.IO để frontend,
 
 - Các event thuộc nhóm `chat:*`, `call:*`, `key:*` bắt buộc có `conversationId`.
 - Event thuộc nhóm `presence:*` không yêu cầu `conversationId`.
+- Event thuộc nhóm `conversation:*` dùng để quản lý room socket và bắt buộc có `conversationId`.
 - Realtime phải từ chối event với lỗi `PERMISSION_DENIED` nếu `senderUserId` không thuộc conversation mục tiêu.
 - `senderUserId` phải được lấy từ phiên đã xác thực ở handshake.
 - Nếu client gửi `senderUserId` trong payload, server phải bỏ qua và dùng giá trị từ auth context.
@@ -95,6 +96,37 @@ userId: string(uuid-v7) [required]
 status: string [required, online|offline|away]
 lastSeenAt: string(iso8601) [optional]
 ```
+
+## Nhóm sự kiện `conversation`
+
+### conversation:join
+- Bên gửi: Client
+- Bên nhận: Realtime
+- Mục đích: tham gia Socket.IO room của conversation để nhận chat/call/key event liên quan.
+
+Payload:
+```txt
+conversationId: string(uuid-v7) [required]
+```
+
+Hành vi khi thành công:
+- Realtime kiểm tra `senderUserId` từ auth context có thuộc conversation không.
+- Realtime gọi `socket.join("conversation:{conversationId}")`.
+- Realtime trả `system:ack` cho client.
+
+### conversation:leave
+- Bên gửi: Client
+- Bên nhận: Realtime
+- Mục đích: rời Socket.IO room của conversation khi không còn cần nhận realtime event.
+
+Payload:
+```txt
+conversationId: string(uuid-v7) [required]
+```
+
+Hành vi khi thành công:
+- Realtime gọi `socket.leave("conversation:{conversationId}")`.
+- Realtime trả `system:ack` cho client.
 
 ## Nhóm sự kiện `chat`
 
