@@ -2,6 +2,7 @@ import type { Socket } from "socket.io";
 import type { ConversationAccessService } from "../services/conversationAccess.js";
 import type { MessagePersistenceService } from "../services/messagePersistence.js";
 import type { DedupeResult, DedupeStore } from "../stores/dedupeStore.js";
+import type { NonceReplayStore } from "../stores/nonceReplayStore.js";
 import { isObject, isUuid, readClientEvent, readRequestId } from "./events.js";
 import { conversationRoomName } from "./rooms.js";
 import { emitAck, emitError } from "./system.js";
@@ -92,6 +93,7 @@ export function registerChatHandlers(
   accessService: ConversationAccessService,
   persistenceService: MessagePersistenceService,
   dedupeStore: DedupeStore,
+  nonceReplayStore: NonceReplayStore,
 ) {
   socket.on("chat:send", async (data: unknown) => {
     const requestId = readRequestId(data);
@@ -126,6 +128,39 @@ export function registerChatHandlers(
 
       if (existingResult) {
         replayDedupeResult(socket, event.requestId, existingResult);
+        return;
+      }
+
+      const nonceReplayKey = nonceReplayStore.createKey({
+        senderDeviceId: auth.deviceId,
+        conversationId: event.payload.conversationId,
+        nonce: event.payload.nonce,
+        keyVersion: event.payload.keyVersion,
+      });
+
+      if (nonceReplayStore.has(nonceReplayKey)) {
+        const errorResult = {
+          type: "error" as const,
+          errorCode: "REPLAY_DETECTED" as const,
+          errorMessage: "Message nonce was already used for this device and key version.",
+          retryable: false,
+          details: {
+            conversationId: event.payload.conversationId,
+            messageId: event.payload.messageId,
+            keyVersion: event.payload.keyVersion,
+          },
+        };
+
+        // RT-14: Cung nonce trong cung device/conversation/keyVersion la dau hieu replay.
+        emitError(
+          socket,
+          event.requestId,
+          errorResult.errorCode,
+          errorResult.errorMessage,
+          errorResult.retryable,
+          errorResult.details,
+        );
+        dedupeStore.set(dedupeKey, errorResult);
         return;
       }
 
@@ -170,6 +205,8 @@ export function registerChatHandlers(
           keyVersion: event.payload.keyVersion,
           createdAt: persistResult.createdAt,
         });
+
+        nonceReplayStore.markUsed(nonceReplayKey);
 
         // RT-13: Luu ket qua de retry cung requestId khong tao message/fanout trung.
         dedupeStore.set(dedupeKey, {

@@ -8,6 +8,10 @@ export type AppConfig = {
   allowDevSocketAuth: boolean;
   allowDevConversationAccess: boolean;
   allowDevMessagePersist: boolean;
+  callInviteTimeoutMs: number;
+  staleCleanupIntervalMs: number;
+  socketPingIntervalMs: number;
+  socketPingTimeoutMs: number;
 };
 
 function readCsvEnv(value: string | undefined, fallback: string): string[] {
@@ -38,5 +42,9 @@ export function loadConfig(): AppConfig {
       nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS !== "false",
     // Tam thoi fake persist o local khi API-19 chua co endpoint internal persist.
     allowDevMessagePersist: nodeEnv !== "production" && process.env.ALLOW_DEV_MESSAGE_PERSIST === "true",
+    callInviteTimeoutMs: Number(process.env.CALL_INVITE_TIMEOUT_MS || 30_000),
+    staleCleanupIntervalMs: Number(process.env.STALE_CLEANUP_INTERVAL_MS || 15_000),
+    socketPingIntervalMs: Number(process.env.SOCKET_PING_INTERVAL_MS || 25_000),
+    socketPingTimeoutMs: Number(process.env.SOCKET_PING_TIMEOUT_MS || 20_000),
   };
 }
