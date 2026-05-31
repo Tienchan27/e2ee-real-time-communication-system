@@ -1,0 +1,42 @@
+export type AppConfig = {
+  port: number;
+  nodeEnv: string;
+  socketOrigins: string[];
+  jwtAccessSecret: string;
+  apiInternalBaseUrl: string;
+  apiInternalToken: string;
+  allowDevSocketAuth: boolean;
+  allowDevConversationAccess: boolean;
+  allowDevMessagePersist: boolean;
+};
+
+function readCsvEnv(value: string | undefined, fallback: string): string[] {
+  // Tach bien moi truong dang CSV thanh mang origin hop le cho Socket.IO CORS.
+  return (value || fallback)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function loadConfig(): AppConfig {
+  const nodeEnv = process.env.NODE_ENV || "development";
+
+  return {
+    port: Number(process.env.PORT || 4000),
+    nodeEnv,
+    socketOrigins: readCsvEnv(
+      process.env.SOCKET_CORS_ORIGINS || process.env.CLIENT_URL,
+      "http://localhost",
+    ),
+    jwtAccessSecret: process.env.JWT_ACCESS_SECRET || "",
+    apiInternalBaseUrl: process.env.API_INTERNAL_BASE_URL || "http://api-service:3000",
+    apiInternalToken: process.env.API_INTERNAL_TOKEN || "",
+    // Cho phep dung token dev khi API login/JWT chua hoan thien.
+    allowDevSocketAuth: nodeEnv !== "production",
+    // Tam thoi cho phep join conversation o local khi API membership chua co.
+    allowDevConversationAccess:
+      nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS !== "false",
+    // Tam thoi fake persist o local khi API-19 chua co endpoint internal persist.
+    allowDevMessagePersist: nodeEnv !== "production" && process.env.ALLOW_DEV_MESSAGE_PERSIST === "true",
+  };
+}
