@@ -6,3 +6,4 @@
 - [2026-05-12T14:05:00+07:00] Added internal API call for persisted messages
 - [2026-05-20T09:50:00+07:00] Completed RT13 to RT19 tasks
 - [2026-05-28T17:25:00+07:00] Completed RT20 to RT23 tasks
+- [2026-06-03T13:40:00+07:00] Fixed delayed call handling
