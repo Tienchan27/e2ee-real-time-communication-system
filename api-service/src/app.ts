@@ -4,6 +4,7 @@ import cors from "cors";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
 import { pingDb } from "./db.js";
+import { authRouter } from "./routes/auth.js";
 
 export function createApp() {
   const app = express();
@@ -17,6 +18,8 @@ export function createApp() {
     }),
   );
   app.use(express.json({ limit: "1mb" }));
+
+  app.use("/api/v1/auth", authRouter);
 
   app.get("/health", (_req, res) => {
     res.json({
