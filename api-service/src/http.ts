@@ -11,6 +11,8 @@ export type ErrorCode =
   | "OTP_INVALID"
   | "OTP_EXPIRED"
   | "USER_NOT_FOUND"
+  | "CONVERSATION_NOT_FOUND"
+  | "PERMISSION_DENIED"
   | "INTERNAL_ERROR";
 
 export function ok(res: Response, data: unknown, meta: Record<string, unknown> = {}) {

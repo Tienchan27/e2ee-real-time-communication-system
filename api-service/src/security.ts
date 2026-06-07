@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
-type JwtPayload = Record<string, unknown> & {
+export type JwtPayload = Record<string, unknown> & {
   sub: string;
   exp: number;
   iat: number;
@@ -69,20 +69,31 @@ export function signJwt(
 }
 
 export function verifyJwt(token: string, secret: string): JwtPayload | null {
-  const [encodedHeader, encodedPayload, signature] = token.split(".");
-  if (!encodedHeader || !encodedPayload || !signature) {
+  try {
+    const [encodedHeader, encodedPayload, signature] = token.split(".");
+    if (!encodedHeader || !encodedPayload || !signature) {
+      return null;
+    }
+
+    const expectedSignature = signHmac(`${encodedHeader}.${encodedPayload}`, secret);
+    if (!safeEqualText(signature, expectedSignature)) {
+      return null;
+    }
+
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf8"),
+    ) as JwtPayload;
+    if (
+      typeof payload.sub !== "string" ||
+      typeof payload.iat !== "number" ||
+      typeof payload.exp !== "number" ||
+      payload.exp < Math.floor(Date.now() / 1000)
+    ) {
+      return null;
+    }
+
+    return payload;
+  } catch {
     return null;
   }
-
-  const expectedSignature = signHmac(`${encodedHeader}.${encodedPayload}`, secret);
-  if (!safeEqualText(signature, expectedSignature)) {
-    return null;
-  }
-
-  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as JwtPayload;
-  if (payload.exp < Math.floor(Date.now() / 1000)) {
-    return null;
-  }
-
-  return payload;
 }
