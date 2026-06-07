@@ -16,6 +16,8 @@ End-to-end encrypted chat and voice/video (1-1) — microservice stack.
 
 Ensure `api-service/.env` uses host **`postgres`** in `DATABASE_URL` (not `localhost`) when running inside Compose.
 
+After each `git pull`, compare your `.env` files with the matching `.env.example` and add any new keys (e.g. `JWT_ACCESS_SECRET`, `ALLOW_DEV_*` in `realtime-service/.env`). `JWT_ACCESS_SECRET` must match between `api-service` and `realtime-service`.
+
 ## Quick start (local dev)
 
 ```powershell

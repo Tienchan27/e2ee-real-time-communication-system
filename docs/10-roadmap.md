@@ -62,7 +62,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 |---:|---|---|---|---|---|---|---|
 | 1 | SYS-01 | Chốt glossary và quy ước naming toàn dự án | Không | S | Done | 2026-05-16 | `docs/00-glossary-and-naming.md` |
 | 2 | SYS-02 | Chốt rule freeze cho API/Event contract | SYS-01 | S | Done | 2026-05-16 | `02`/`03` FROZEN; freeze rules trong `09` |
-| 3 | SYS-03 | Chốt policy socket auth (handshake-only) | SYS-02,API-09,RT-02 | XS | Todo |  | Đồng bộ `03-events.md` |
+| 3 | SYS-03 | Chốt policy socket auth (handshake-only) | SYS-02,API-09,RT-02 | XS | Done | 2026-05-24 | Policy `06-security.md`; clarify `03-events.md` |
 | 4 | SYS-04 | Chốt tiêu chuẩn E2EE envelope + replay rule | SYS-02,API-19,RT-14 | S | Todo |  | Đồng bộ `05-e2ee.md` |
 | 5 | SYS-05 | Chốt threshold rotate (`N`,`T`) + grace window | SYS-04 | XS | Todo |  |  |
 | 6 | SYS-06 | Chốt tie-break khi rotate đồng thời | SYS-05 | XS | Todo |  |  |
@@ -70,9 +70,9 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 8 | SYS-08 | Chốt TURN fallback policy | SYS-07,RT-22 | XS | Todo |  |  |
 | 9 | SYS-09 | Review consistency `02`-`03`-`04`-`05` | SYS-03,SYS-06,SYS-08 | M | Todo |  | Chạy mỗi cuối tuần |
 | 10 | SYS-10 | Thiết kế checklist kiểm thử tích hợp E2E | SYS-09 | S | Todo |  | Theo `08-qa-test-plan.md` |
-| 11 | SYS-11 | Thiết kế workflow CI | SYS-09,API-28,RT-28,FE-28 | M | In Progress |  | Có `.github/workflows/ci.yml` (compose validate dev/prod) |
+| 11 | SYS-11 | Thiết kế workflow CI | SYS-09,API-28,RT-28,FE-28 | M | In Progress |  | CI: compose validate + build 3 service + compose-build + audit lite |
 | 12 | SYS-12 | Thiết kế workflow CD + smoke test | SYS-11,API-26,RT-26 | M | Todo |  |  |
-| 13 | SYS-13 | Chốt secrets matrix theo môi trường | SYS-11,API-10,RT-02 | S | In Progress |  | `.env.example` + `.env.prod.example` + per-service |
+| 13 | SYS-13 | Chốt secrets matrix theo môi trường | SYS-11,API-10,RT-02 | S | Done | 2026-05-24 | Bảng secrets + checklist trong `07`; comment `.env.example` |
 | 14 | SYS-14 | Triển khai staging | SYS-12,SYS-13 | M | Todo |  |  |
 | 15 | SYS-15 | Triển khai production | SYS-14 | M | Todo |  |  |
 | 16 | SYS-16 | Chốt runbook demo + rollback | SYS-15 | S | Todo |  |  |
