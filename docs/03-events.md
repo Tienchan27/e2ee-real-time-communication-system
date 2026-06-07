@@ -19,7 +19,7 @@ Tài liệu này định nghĩa toàn bộ sự kiện Socket.IO để frontend,
   - `requestId: string(uuid-v7)`
   - `timestamp: string(iso8601)`
 - Xác thực socket chỉ thực hiện tại handshake:
-  - Client phải gửi access token ở bước handshake.
+  - Client phải gửi access token ở bước handshake qua `socket.handshake.auth.accessToken`.
   - Event payload không mang `authToken` lặp lại cho mỗi event.
 - Mọi phản hồi từ server phải là một trong hai:
   - `system:ack`
@@ -326,4 +326,5 @@ Bảng map subset giữa REST `error.code` và socket `errorCode`: xem mục 7 t
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-05-16 | System Owner | Initial freeze V1: thêm `conversationId` vào `chat:send` và `chat:delivered`; UUID v7; FROZEN |
+| 1.0.0-clarify | 2026-05-24 | System Owner | Clarify: handshake field name `accessToken` trong `handshake.auth` (không đổi contract shape) |
 

@@ -23,14 +23,20 @@ Tài liệu này chốt kiến trúc hệ thống để cả nhóm có cùng cá
 
 ```mermaid
 flowchart LR
-  UserA[TrìnhDuyệtA] -->|"HTTPS + WSS"| API[ApiService]
-  UserA -->|"WSS"| RT[RealtimeService]
-  UserB[TrìnhDuyệtB] -->|"HTTPS + WSS"| API
-  UserB -->|"WSS"| RT
+  UserA[BrowserA] --> GW[Gateway_Nginx]
+  UserB[BrowserB] --> GW
+  GW -->|"/api"| API[ApiService]
+  GW -->|"/socket.io"| RT[RealtimeService]
+  GW -->|"/"| FE[Frontend]
   API -->|"SQL"| PG[(PostgreSQL)]
-  RT -->|"HTTP nội bộ"| API
-  RT -->|"STUN/TURN"| TURN[Coturn]
+  RT -->|"internal_HTTP"| API
+  RT -.->|"future"| TURN[Coturn]
 ```
+
+### Local vs cloud entry point
+
+- **Local (Docker Compose):** một cổng `http://localhost` qua service `gateway` (nginx). Browser chỉ nói chuyện với gateway; gateway proxy `/api/*` → API, `/socket.io/*` → Realtime, `/` → Frontend (Vite dev hoặc static `dist`).
+- **Cloud free-tier:** có thể triển khai tách (Vercel FE + Render API/RT) hoặc gom trên một VM chạy `compose.yaml` + gateway. Chi tiết: [`07-deployment-cicd.md`](07-deployment-cicd.md).
 
 ## Ranh giới trách nhiệm
 

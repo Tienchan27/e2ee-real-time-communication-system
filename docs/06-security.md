@@ -67,6 +67,27 @@ exp: number [required]
 - Public search không được trả email raw.
 - Exact email search may be allowed but response remains masked/minimal.
 
+## Socket authentication (handshake-only)
+
+Policy SYS-03 — chi tiết triển khai khớp [`03-events.md`](03-events.md) và Realtime `socket/auth`.
+
+| Quy tắc | Chi tiết |
+|---------|----------|
+| Thời điểm auth | Chỉ tại Socket.IO handshake; payload event **không** mang token |
+| Client field | `socket.handshake.auth.accessToken` (canonical) |
+| JWT | HS256; claims `sub`, `sid`, `deviceId`, `exp` — khớp JWT baseline ở trên |
+| Server context | `userId` ← `sub`; `deviceId`, `sessionId` ← claims; `senderUserId` server-derived |
+| Test-only | `Authorization: Bearer` header — chỉ tooling/script, không dùng production FE |
+| Dev token | `dev:<userId>:<deviceId>:<sessionId>` — **chỉ** khi `NODE_ENV !== production` |
+| Production | Cấm dev token; thiếu `JWT_ACCESS_SECRET` → từ chối handshake |
+| Lỗi | `AUTH_INVALID`, `AUTH_TOKEN_EXPIRED` — không leak chi tiết JWT |
+
+Quy tắc bổ sung:
+
+- `JWT_ACCESS_SECRET` phải **khớp** giữa API Service và Realtime Service.
+- Dev bypass (`ALLOW_DEV_CONVERSATION_ACCESS`, `ALLOW_DEV_MESSAGE_PERSIST`) chỉ bật local; staging/prod phải tắt.
+- Không log access token, dev token, hoặc JWT payload trong log thường.
+
 ## Bảo mật đường truyền
 
 - Chỉ dùng HTTPS ở môi trường không phải local.
