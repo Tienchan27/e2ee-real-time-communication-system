@@ -3,13 +3,13 @@ import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { fail, ok } from "../http.js";
+import { authRequired } from "../middlewares/auth.js";
 import {
   hashSecret,
   randomOtpCode,
   randomToken,
   sha256,
   signJwt,
-  verifyJwt,
   verifySecret,
 } from "../security.js";
 
@@ -319,18 +319,10 @@ router.post("/logout", async (req, res) => {
   return ok(res, { revoked: (result.rowCount ?? 0) > 0 });
 });
 
-router.post("/logout-all", async (req, res) => {
-  const requestId = randomUUID();
-  const authHeader = req.header("Authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
-  const payload = token ? verifyJwt(token, config.jwtAccessSecret) : null;
-  if (!payload) {
-    return fail(res, 401, "AUTH_TOKEN_EXPIRED", "Invalid access token", requestId);
-  }
-
+router.post("/logout-all", authRequired, async (req, res) => {
   const result = await pool.query(
     "UPDATE sessions SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND revoked_at IS NULL",
-    [payload.sub],
+    [req.auth!.userId],
   );
 
   return ok(res, { revokedSessionCount: result.rowCount ?? 0 });

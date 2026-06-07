@@ -40,6 +40,7 @@ export const config = {
     process.env.DATABASE_URL ?? "postgresql://postgres:admin@localhost:5432/e2ee_app",
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "change-me-access",
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? "change-me-refresh",
+  apiInternalToken: process.env.API_INTERNAL_TOKEN ?? "change-me",
   accessTokenTtlSec: Number(process.env.ACCESS_TOKEN_TTL_SEC ?? 15 * 60),
   refreshTokenTtlSec: Number(process.env.REFRESH_TOKEN_TTL_SEC ?? 30 * 24 * 60 * 60),
   corsOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost")
