@@ -97,6 +97,24 @@ status: string [required, online|offline|away]
 lastSeenAt: string(iso8601) [optional]
 ```
 
+## Nhóm sự kiện `realtime`
+
+### realtime:resubscribe
+- Bên gửi: Client
+- Bên nhận: Realtime
+- Mục đích: khôi phục room conversation và presence targets sau khi socket reconnect.
+
+Payload:
+```txt
+conversationIds: array<string(uuid-v7)> [optional]
+presenceTargets: array<string(uuid-v7)> [optional]
+```
+
+Hành vi khi thành công:
+- Realtime kiểm tra quyền từng conversation trước khi join room.
+- Realtime đăng ký lại presence targets và gửi `presence:update` hiện tại.
+- Realtime trả `system:ack`.
+
 ## Nhóm sự kiện `conversation`
 
 ### conversation:join
@@ -127,6 +145,22 @@ conversationId: string(uuid-v7) [required]
 Hành vi khi thành công:
 - Realtime gọi `socket.leave("conversation:{conversationId}")`.
 - Realtime trả `system:ack` cho client.
+
+### conversation:created
+- Bên gửi: Realtime (sau khi API gọi `POST /internal/conversations/notify-created`)
+- Bên nhận: Client (peer được mời vào direct conversation)
+- Mục đích: refresh danh sách conversation khi có người khác tạo chat direct với mình.
+
+Payload:
+```txt
+conversationId: string(uuid-v7) [required]
+initiatorUserId: string(uuid-v7) [required]
+initiatorDisplayName: string [optional]
+```
+
+Hành vi:
+- Realtime emit tới mọi socket đang kết nối của `peerUserId` (người nhận thông báo).
+- Client nên gọi lại `GET /conversations` để hiển thị chat mới mà không cần search ngược.
 
 ## Nhóm sự kiện `chat`
 
@@ -166,6 +200,7 @@ ciphertext: string(base64) [required]
 nonce: string(base64) [required]
 algorithm: string [required]
 keyVersion: number [required]
+aad: object [optional, wire metadata e.g. G-lite setup]
 createdAt: string(iso8601) [required]
 ```
 
@@ -225,6 +260,8 @@ reason: string [required, message_count|time_window|manual]
 senderEphemeralPublicKey: string(base64) [required]
 ```
 
+> **FE (bản tối thiểu):** `senderEphemeralPublicKey` mang `rotationSalt` (HKDF salt, 32 byte random base64), **không** phải ECDH public key. Cùng salt được nhúng trong `envelope.aad` của tin đầu sau rotate để peer offline vẫn derive được.
+
 ### key:rekey_required
 
 Payload:
@@ -271,6 +308,7 @@ reason: string [optional]
 Payload:
 ```txt
 callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 sdp: string [required]
 sdpType: string [required, offer|answer]
 ```
@@ -280,6 +318,7 @@ sdpType: string [required, offer|answer]
 Payload:
 ```txt
 callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 candidate: object [required]
 ```
 

@@ -58,7 +58,6 @@ export function createMessagePersistenceService(config: AppConfig): MessagePersi
   return {
     async persistMessage(input) {
       if (config.allowDevMessagePersist) {
-        // Dev mode giup RT-09..RT-13 test duoc flow realtime truoc khi API-19 san sang.
         return {
           stored: true,
           createdAt: new Date().toISOString(),
@@ -79,7 +78,6 @@ export function createMessagePersistenceService(config: AppConfig): MessagePersi
         throw new Error(`API_PERSIST_FAILED_${response.status}`);
       }
 
-      // API service chiu trach nhiem luu ciphertext, realtime chi chuyen envelope da ma hoa.
       return readApiPersistResponse((await response.json()) as ApiPersistResponse);
     },
   };

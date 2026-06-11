@@ -16,7 +16,7 @@ End-to-end encrypted chat and voice/video (1-1) — microservice stack.
 
 Ensure `api-service/.env` uses host **`postgres`** in `DATABASE_URL` (not `localhost`) when running inside Compose.
 
-After each `git pull`, compare your `.env` files with the matching `.env.example` and add any new keys (e.g. `JWT_ACCESS_SECRET`, `ALLOW_DEV_*` in `realtime-service/.env`). `JWT_ACCESS_SECRET` must match between `api-service` and `realtime-service`.
+After each `git pull`, compare your `.env` files with the matching `.env.example` and add any new keys (e.g. `JWT_ACCESS_SECRET`, `ALLOW_DEV_*` in `realtime-service/.env`, `REALTIME_INTERNAL_BASE_URL` in `api-service/.env`). `JWT_ACCESS_SECRET` and `API_INTERNAL_TOKEN` must match between `api-service` and `realtime-service`.
 
 ## Quick start (local dev)
 
@@ -24,7 +24,45 @@ After each `git pull`, compare your `.env` files with the matching `.env.example
 docker compose up --build
 ```
 
+On first run (or after API schema changes), migrations run automatically via `compose.override.yaml` (`npm run migrate` before `dev`). Manual fallback:
+
+```powershell
+docker compose exec api-service npm run migrate
+```
+
+Migration `003_device_ecdh_keys` adds device ECDH prekeys for G-lite first-message E2EE. After migrate, each test user should **log in once** so the client uploads its device public key (seed users in `002_seed_test_users.sql` do not include prekeys).
+
+If api/realtime fail with `esbuild/linux-x64` after pull on Windows, reset node_modules volumes:
+
+```powershell
+docker compose down -v
+docker compose up --build
+```
+
+Frontend (Vite 8 / rolldown) needs Linux native bindings in Docker — `compose.override.yaml` runs `npm install --include=optional` (not `npm ci`, because the lockfile is generated on Windows). If frontend keeps restarting, reset only the frontend volume:
+
+```powershell
+docker compose rm -sf frontend
+docker volume rm e2ee-real-time-communication-system_frontend_node_modules
+docker compose up --build -d frontend
+```
+
 Open **http://localhost** (gateway). API: `http://localhost/api/v1/...`, Socket.IO: `http://localhost/socket.io/`.
+
+## First-message E2EE test checklist
+
+After migration `003` and stack is up:
+
+1. **Login Alice once** (uploads device prekey via `PUT /devices/me/ecdh-public-key`).
+2. Verify prekey: `GET /api/v1/users/{aliceUserId}/ecdh-public-key` with any valid bearer token → `200` + `publicKey`.
+3. **Bob** opens chat with Alice (Alice stays on Home or offline).
+4. Bob sends first message → Network shows `GET .../ecdh-public-key` **200**, then `chat:send` ack.
+5. Alice opens chat later → message decrypts from history `aad` (G-lite).
+
+Fallback (Alice never logged in after migrate):
+
+- Bob sends → message queues with “đối phương chưa có khoá mã hoá”.
+- Alice online on Home receives `conversation:created` → auto-joins room → socket exchange → queued messages send.
 
 Compose loads `compose.yaml` + `compose.override.yaml` (bind-mount + `npm run dev`)
 
@@ -93,3 +131,4 @@ See [`docs/`](docs/) — read in order:
 4. [`03-events.md`](docs/03-events.md) — Socket.IO events (FROZEN v1.0.0)
 5. [`09-team-raci.md`](docs/09-team-raci.md) — RACI, contract freeze rules
 6. [`07-deployment-cicd.md`](docs/07-deployment-cicd.md) — deployment and CI/CD
+7. [`08-aws-ec2-deploy.md`](docs/08-aws-ec2-deploy.md) — deploy lên AWS EC2 free tier (HTTPS + TURN, demo)

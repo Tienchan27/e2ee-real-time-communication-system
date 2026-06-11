@@ -43,6 +43,7 @@ jobs:
         working-directory: api-service
         run: |
           npm ci
+          npm test
           npm run build
 
   build-realtime:

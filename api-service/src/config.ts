@@ -41,10 +41,20 @@ export const config = {
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "change-me-access",
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? "change-me-refresh",
   apiInternalToken: process.env.API_INTERNAL_TOKEN ?? "change-me",
+  realtimeInternalBaseUrl:
+    process.env.REALTIME_INTERNAL_BASE_URL ?? "http://realtime-service:4000",
   accessTokenTtlSec: Number(process.env.ACCESS_TOKEN_TTL_SEC ?? 15 * 60),
   refreshTokenTtlSec: Number(process.env.REFRESH_TOKEN_TTL_SEC ?? 30 * 24 * 60 * 60),
   corsOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? "http://localhost")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
+  smtp: {
+    host: process.env.SMTP_HOST ?? "",
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true",
+    user: process.env.SMTP_USER ?? "",
+    pass: process.env.SMTP_PASS ?? "",
+    from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "",
+  },
 };

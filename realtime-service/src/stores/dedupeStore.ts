@@ -32,7 +32,6 @@ export class DedupeStore {
   constructor(private readonly ttlMs = 5 * 60 * 1000) {}
 
   createKey(input: DedupeKeyInput): string {
-    // Theo contract: requestId + senderDeviceId + conversationId la khoa dedupe event client.
     return `${input.requestId}:${input.senderDeviceId}:${input.conversationId}`;
   }
 

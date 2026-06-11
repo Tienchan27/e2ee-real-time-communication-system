@@ -1,25 +1,44 @@
+import "dotenv/config";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { Server } from "socket.io";
 import { loadConfig } from "./config.js";
 import { createConversationAccessService } from "./services/conversationAccess.js";
 import { createMessagePersistenceService } from "./services/messagePersistence.js";
+import { createCallPersistenceService } from "./services/callPersistence.js";
+import { checkReadiness } from "./services/readiness.js";
 import { createSocketAuthMiddleware } from "./socket/auth.js";
+import { registerCallHandlers, startCallCleanupInterval } from "./socket/call.js";
 import { registerChatHandlers } from "./socket/chat.js";
+import { registerHeartbeatHandlers, startHeartbeatCleanupInterval } from "./socket/heartbeat.js";
+import { registerKeyHandlers } from "./socket/key.js";
 import { broadcastPresenceUpdate, registerPresenceHandlers } from "./socket/presence.js";
-import { registerRoomHandlers } from "./socket/rooms.js";
+import { registerReconnectHandlers } from "./socket/reconnect.js";
+import { registerRoomHandlers, restoreConversationRooms } from "./socket/rooms.js";
+import { CallStore } from "./stores/callStore.js";
 import { ConnectionStore } from "./stores/connectionStore.js";
 import { DedupeStore } from "./stores/dedupeStore.js";
+import { NonceReplayStore } from "./stores/nonceReplayStore.js";
 import { PresenceSubscriptionStore } from "./stores/presenceSubscriptionStore.js";
+import { RoomSubscriptionStore } from "./stores/roomSubscriptionStore.js";
+import { SocketActivityStore } from "./stores/socketActivityStore.js";
+import { isInternalRequestAuthorized, readJsonBody } from "./http/internalAuth.js";
+import { notifyConversationCreated } from "./services/conversationNotify.js";
 
 const config = loadConfig();
 const connectionStore = new ConnectionStore();
 const presenceSubscriptionStore = new PresenceSubscriptionStore();
 const conversationAccessService = createConversationAccessService(config);
 const messagePersistenceService = createMessagePersistenceService(config);
+const callPersistenceService = createCallPersistenceService(config);
 const dedupeStore = new DedupeStore();
+const nonceReplayStore = new NonceReplayStore();
+const callStore = new CallStore(config.callInviteTimeoutMs);
+const roomSubscriptionStore = new RoomSubscriptionStore();
+const socketActivityStore = new SocketActivityStore(
+  config.socketPingIntervalMs + config.socketPingTimeoutMs,
+);
 
 function sendJson(res: ServerResponse, statusCode: number, data: Record<string, unknown>) {
-  // Ham nho giup cac endpoint tra ve JSON co format giong nhau.
   const body = JSON.stringify(data);
 
   res.writeHead(statusCode, {
@@ -29,10 +48,17 @@ function sendJson(res: ServerResponse, statusCode: number, data: Record<string, 
   res.end(body);
 }
 
-const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
+const io = new Server({
+  cors: {
+    origin: config.socketOrigins,
+  },
+  pingInterval: config.socketPingIntervalMs,
+  pingTimeout: config.socketPingTimeoutMs,
+});
+
+const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
 
-  // Healthcheck de Docker biet realtime service dang song.
   if (req.method === "GET" && url.pathname === "/health") {
     sendJson(res, 200, {
       status: "ok",
@@ -41,15 +67,53 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
     return;
   }
 
-  // Readycheck don gian cho giai doan khoi dau du an.
   if (req.method === "GET" && url.pathname === "/ready") {
-    sendJson(res, 200, {
-      status: "ready",
+    const readiness = await checkReadiness(config);
+
+    sendJson(res, readiness.ready ? 200 : 503, {
+      status: readiness.status,
       socketCorsOrigins: config.socketOrigins,
       authMode: config.allowDevSocketAuth ? "jwt-or-dev-token" : "jwt",
+      checks: readiness.checks,
       connections: connectionStore.getStats(),
       dedupe: dedupeStore.getStats(),
+      replay: nonceReplayStore.getStats(),
+      calls: callStore.getStats(),
+      roomSubscriptions: roomSubscriptionStore.getStats(),
+      socketActivity: socketActivityStore.getStats(),
     });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/internal/conversations/notify-created") {
+    if (!isInternalRequestAuthorized(req, config)) {
+      sendJson(res, 401, { success: false, error: "Unauthorized" });
+      return;
+    }
+
+    try {
+      const body = (await readJsonBody(req)) as Record<string, unknown>;
+      const notifyPayload: {
+        conversationId: string;
+        peerUserId: string;
+        initiatorUserId: string;
+        initiatorDisplayName?: string;
+      } = {
+        conversationId: String(body.conversationId ?? ""),
+        peerUserId: String(body.peerUserId ?? ""),
+        initiatorUserId: String(body.initiatorUserId ?? ""),
+      };
+      if (typeof body.initiatorDisplayName === "string") {
+        notifyPayload.initiatorDisplayName = body.initiatorDisplayName;
+      }
+      const delivered = notifyConversationCreated(io, connectionStore, notifyPayload);
+      sendJson(res, 200, { success: true, delivered });
+    } catch (error) {
+      sendJson(res, 400, {
+        success: false,
+        error: error instanceof Error ? error.message : "VALIDATION_FAILED",
+      });
+    }
     return;
   }
 
@@ -59,23 +123,39 @@ const server = http.createServer((req: IncomingMessage, res: ServerResponse) => 
   });
 });
 
-const io = new Server(server, {
-  cors: {
-    origin: config.socketOrigins,
-  },
-});
-
+io.attach(server);
 io.use(createSocketAuthMiddleware(config));
+
+startCallCleanupInterval(io, callStore, callPersistenceService, config.staleCleanupIntervalMs);
+startHeartbeatCleanupInterval(io, socketActivityStore, config.staleCleanupIntervalMs);
 
 io.on("connection", (socket) => {
   const auth = socket.data.auth;
   const presence = connectionStore.addSocket(socket.id, auth);
 
-  registerRoomHandlers(socket, conversationAccessService);
-  registerPresenceHandlers(socket, connectionStore, presenceSubscriptionStore);
-  registerChatHandlers(socket, conversationAccessService, messagePersistenceService, dedupeStore);
+  // Personal room so call:incoming reaches the user on any screen.
+  void socket.join(`user:${auth.userId}`);
 
-  // Log metadata can thiet, khong log token de tranh lo thong tin nhay cam.
+  registerHeartbeatHandlers(socket, socketActivityStore);
+  void restoreConversationRooms(socket, conversationAccessService, roomSubscriptionStore);
+  registerRoomHandlers(socket, conversationAccessService, roomSubscriptionStore, callStore);
+  registerPresenceHandlers(socket, connectionStore, presenceSubscriptionStore);
+  registerChatHandlers(
+    socket,
+    conversationAccessService,
+    messagePersistenceService,
+    dedupeStore,
+    nonceReplayStore,
+  );
+  registerKeyHandlers(socket, conversationAccessService);
+  registerCallHandlers(socket, conversationAccessService, callStore, callPersistenceService);
+  registerReconnectHandlers(
+    socket,
+    conversationAccessService,
+    connectionStore,
+    presenceSubscriptionStore,
+  );
+
   console.log(
     `socket connected: socketId=${socket.id} userId=${auth.userId} deviceId=${auth.deviceId}`,
   );
@@ -83,6 +163,7 @@ io.on("connection", (socket) => {
   broadcastPresenceUpdate(io, presenceSubscriptionStore, presence);
 
   socket.on("disconnect", (reason) => {
+    socketActivityStore.remove(socket.id);
     presenceSubscriptionStore.removeSocket(socket.id);
     const updatedPresence = connectionStore.removeSocket(socket.id);
 

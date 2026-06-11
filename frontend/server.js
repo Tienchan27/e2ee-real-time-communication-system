@@ -20,11 +20,10 @@ const contentTypes = {
 };
 
 function resolvePublicPath(pathname) {
-  // Mac dinh / se hien thi file index.html cua giao dien demo.
   const cleanPath = pathname === "/" ? "/index.html" : pathname;
   const filePath = normalize(join(rootDir, cleanPath));
 
-  // Chan request doc file ben ngoai thu muc frontend.
+  // Block path traversal.
   if (!filePath.startsWith(rootDir)) {
     return null;
   }
@@ -48,6 +47,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, host, () => {
-  // Server nay thay Vite tam thoi de ban co the chay preview HTML bang Docker.
   console.log(`frontend listening on http://${host}:${port}`);
 });

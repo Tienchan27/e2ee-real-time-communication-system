@@ -1,19 +1,20 @@
-import React from "react";
 import {
   BrowserRouter,
   Routes,
   Route,
   Navigate,
+  Outlet,
 } from "react-router-dom";
 import { useAuth } from "./context/AuthContext.js";
 import { ChatProvider } from "./context/ChatContext.js";
+import { CallProvider } from "./context/CallContext.js";
+import { CallShell } from "./components/CallShell.js";
+import { AppShell } from "./components/AppShell.js";
 import { LoginPage } from "./pages/LoginPage.js";
 import { RegisterPage } from "./pages/RegisterPage.js";
-import { HomePage } from "./pages/HomePage.js";
-import { ChatPage } from "./pages/ChatPage.js";
 import "./App.css";
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedLayout() {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -21,10 +22,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" />;
+    return <Navigate to="/login" replace />;
   }
 
-  return <ChatProvider>{children}</ChatProvider>;
+  return (
+    <CallProvider>
+      <ChatProvider>
+        <CallShell />
+        <Outlet />
+      </ChatProvider>
+    </CallProvider>
+  );
 }
 
 function App() {
@@ -33,24 +41,12 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
-              <HomePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/:conversationId"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/" element={<Navigate to="/home" />} />
-        <Route path="*" element={<Navigate to="/home" />} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/home" element={<AppShell />} />
+          <Route path="/chat/:conversationId" element={<AppShell />} />
+        </Route>
+        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </BrowserRouter>
   );

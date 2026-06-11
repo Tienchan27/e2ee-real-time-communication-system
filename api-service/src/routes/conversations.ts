@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db.js";
 import { fail, ok } from "../http.js";
 import { authRequired } from "../middlewares/auth.js";
+import { notifyRealtimeConversationCreated } from "../services/realtimeNotify.js";
 import { isUuid, parseLimit } from "../validation.js";
 
 const router = Router();
@@ -40,13 +41,18 @@ router.post("/direct", authRequired, async (req, res) => {
 
   try {
     await client.query("BEGIN");
-    const conversationResult = await client.query<{ id: string; type: string }>(
+    const conversationResult = await client.query<{
+      id: string;
+      type: string;
+      created_at: Date;
+      updated_at: Date;
+    }>(
       `
         INSERT INTO conversations (type, direct_pair_key)
         VALUES ('DIRECT', $1)
         ON CONFLICT (direct_pair_key) WHERE direct_pair_key IS NOT NULL
         DO UPDATE SET direct_pair_key = EXCLUDED.direct_pair_key
-        RETURNING id, type
+        RETURNING id, type, created_at, updated_at
       `,
       [pairKey],
     );
@@ -61,9 +67,10 @@ router.post("/direct", authRequired, async (req, res) => {
       [conversation.id, userId, peerUserId],
     );
 
-    const membersResult = await client.query<MemberRow>(
+    const membersResult = await client.query<MemberRow & { joined_at: Date }>(
       `
-        SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url
+        SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
+               cm.joined_at
         FROM conversation_members cm
         JOIN users u ON u.id = cm.user_id
         WHERE cm.conversation_id = $1
@@ -73,10 +80,24 @@ router.post("/direct", authRequired, async (req, res) => {
     );
     await client.query("COMMIT");
 
+    const initiatorMember = membersResult.rows.find((row) => row.user_id === userId);
+    void notifyRealtimeConversationCreated({
+      conversationId: conversation.id,
+      peerUserId,
+      initiatorUserId: userId,
+      initiatorDisplayName: initiatorMember?.display_name,
+    });
+
     return ok(res, {
       conversationId: conversation.id,
       type: conversation.type,
-      members: membersResult.rows.map(mapMember),
+      members: membersResult.rows.map((row) => ({
+        ...mapMember(row),
+        joinedAt: row.joined_at.toISOString(),
+      })),
+      unreadCount: 0,
+      createdAt: conversation.created_at.toISOString(),
+      updatedAt: conversation.updated_at.toISOString(),
     });
   } catch {
     await client.query("ROLLBACK");
@@ -97,14 +118,20 @@ router.get("/", authRequired, async (req, res) => {
   const result = await pool.query<{
     conversation_id: string;
     type: string;
+    created_at: Date;
     updated_at: Date;
     message_id: string | null;
     sender_user_id: string | null;
     ciphertext: string | null;
-    algorithm: string | null;
-    key_version: number | null;
     message_created_at: Date | null;
     unread_count: string;
+    members: Array<{
+      userId: string;
+      username: string;
+      displayName: string;
+      avatarUrl: string | null;
+      joinedAt: string;
+    }>;
   }>(
     `
       WITH cursor_row AS (
@@ -115,12 +142,11 @@ router.get("/", authRequired, async (req, res) => {
       SELECT
         c.id AS conversation_id,
         c.type,
+        c.created_at,
         c.updated_at,
         lm.id AS message_id,
         lm.sender_user_id,
         lm.ciphertext,
-        lm.algorithm,
-        lm.key_version,
         lm.created_at AS message_created_at,
         (
           SELECT COUNT(*)
@@ -134,13 +160,25 @@ router.get("/", authRequired, async (req, res) => {
                 AND receipt.user_id = $1
                 AND receipt.status = 'read'
             )
-        )::text AS unread_count
+        )::text AS unread_count,
+        ARRAY(
+          SELECT json_build_object(
+            'userId', u.id,
+            'username', u.username,
+            'displayName', u.display_name,
+            'avatarUrl', u.avatar_url,
+            'joinedAt', cm.joined_at
+          )
+          FROM conversation_members cm
+          JOIN users u ON u.id = cm.user_id
+          WHERE cm.conversation_id = c.id
+        ) AS members
       FROM conversations c
       JOIN conversation_members own_membership
         ON own_membership.conversation_id = c.id
        AND own_membership.user_id = $1
       LEFT JOIN LATERAL (
-        SELECT id, sender_user_id, ciphertext, algorithm, key_version, created_at
+        SELECT id, sender_user_id, ciphertext, created_at
         FROM messages
         WHERE conversation_id = c.id
         ORDER BY created_at DESC, id DESC
@@ -160,26 +198,28 @@ router.get("/", authRequired, async (req, res) => {
 
   const hasMore = result.rows.length > limit;
   const rows = result.rows.slice(0, limit);
-  const items = rows.map((row) => ({
+  const conversations = rows.map((row) => ({
     conversationId: row.conversation_id,
     type: row.type,
+    members: row.members ?? [],
     ...(row.message_id
       ? {
           lastMessagePreview: {
             messageId: row.message_id,
             senderUserId: row.sender_user_id,
-            ciphertext: row.ciphertext,
-            algorithm: row.algorithm,
-            keyVersion: row.key_version,
-            createdAt: row.message_created_at?.toISOString(),
+            // E2EE: server cannot decrypt; no ciphertext in preview.
+            preview: null,
+            sentAt: row.message_created_at?.toISOString(),
           },
         }
       : {}),
     unreadCount: Number(row.unread_count),
+    createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   }));
 
-  return ok(res, items, {
+  return ok(res, {
+    conversations,
     nextCursor: hasMore ? rows.at(-1)?.conversation_id ?? null : null,
   });
 });

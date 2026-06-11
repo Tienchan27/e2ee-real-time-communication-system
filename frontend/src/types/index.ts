@@ -1,4 +1,3 @@
-// Common types
 export type UUID = string & { readonly __uuid: unique symbol };
 export type Timestamp = string & { readonly __timestamp: unique symbol };
 
@@ -15,7 +14,6 @@ export function createUUID(value: string): UUID {
   return value as UUID;
 }
 
-// Auth types
 export interface User {
   userId: UUID;
   username: string;
@@ -38,16 +36,26 @@ export interface AuthContext {
   refreshToken: string | null;
   isLoading: boolean;
   error: string | null;
+  prekeyUploadFailed: boolean;
 }
 
-// Device info for login
+export type PendingSendReason = "awaiting_peer_prekey" | "awaiting_key_exchange";
+
+export type OutboundStatus = "pending_key" | "sending" | "sent" | "failed";
+
+export interface ConversationLocalMeta {
+  lastPreview?: string;
+  lastActivityAt?: Timestamp;
+  openedByMe?: boolean;
+  hasLocalActivity?: boolean;
+}
+
 export interface DeviceInfo {
   userAgent: string;
   platform: string;
   deviceName: string;
 }
 
-// Conversation types
 export const ConversationType = {
   DIRECT: "DIRECT",
   GROUP: "GROUP",
@@ -69,7 +77,7 @@ export interface Conversation {
   lastMessagePreview?: {
     messageId: UUID;
     senderUserId: UUID;
-    preview: string;
+    preview: string | null;
     sentAt: Timestamp;
   };
   unreadCount: number;
@@ -77,15 +85,29 @@ export interface Conversation {
   updatedAt: Timestamp;
 }
 
-// Message types
 export interface MessageEnvelope {
-  ciphertext: string; // base64
-  nonce: string; // base64
+  ciphertext: string;
+  nonce: string;
   algorithm: "aes-256-gcm";
   keyVersion: number;
   aad?: Record<string, unknown>;
   clientMessageSeq: number;
 }
+
+export type WrappedKeyEntry = {
+  deviceId: UUID;
+  nonce: string;
+  ciphertext: string;
+};
+
+export type E2eeSetupAad = {
+  e2eeSetup: "g-lite-v1" | "g-lite-v2";
+  senderEphemeralPublicKey: string;
+  senderDeviceId: UUID;
+  // v2 fan-out: conversation key K wrapped to each recipient/self device prekey.
+  // Absent on legacy v1 (direct-ECDH derivation).
+  wrappedKeys?: WrappedKeyEntry[];
+};
 
 export interface Message {
   messageId: UUID;
@@ -95,13 +117,14 @@ export interface Message {
   senderDisplayName: string;
   senderAvatarUrl?: string;
   envelope: MessageEnvelope;
-  plaintext?: string; // Decrypted plaintext (not persisted)
+  plaintext?: string;
+  outboundStatus?: OutboundStatus;
+  clientTempId?: UUID;
   deliveredTo: UUID[];
   readBy: UUID[];
   createdAt: Timestamp;
 }
 
-// Receipt types
 export const ReceiptStatus = {
   SENT: "SENT",
   DELIVERED: "DELIVERED",
@@ -116,7 +139,6 @@ export interface Receipt {
   updatedAt: Timestamp;
 }
 
-// Presence types
 export const PresenceStatus = {
   ONLINE: "online",
   OFFLINE: "offline",
@@ -130,7 +152,6 @@ export interface Presence {
   lastSeenAt?: Timestamp;
 }
 
-// Call types
 export const CallType = {
   VOICE: "voice",
   VIDEO: "video",
@@ -161,14 +182,39 @@ export interface CallState {
   remoteSdpAnswer?: string;
 }
 
-// Socket event types
+export interface IncomingCallEvent {
+  callId: UUID;
+  conversationId: UUID;
+  callerUserId: UUID;
+  callType: CallType;
+  expiresAt: Timestamp;
+}
+
+export type CallLogStatus = "missed" | "rejected" | "completed" | "ended";
+
+export interface CallLog {
+  callId: UUID;
+  conversationId: UUID;
+  callerId: UUID;
+  receiverId: UUID;
+  callType: CallType;
+  status: CallLogStatus;
+  startedAt: Timestamp | null;
+  endedAt: Timestamp | null;
+  durationSec: number | null;
+  createdAt: Timestamp;
+}
+
+export type TimelineItem =
+  | { type: "message"; message: Message; sortAt: string }
+  | { type: "call"; call: CallLog; sortAt: string };
+
 export interface SocketEventEnvelope<T> {
   requestId: UUID;
   timestamp: Timestamp;
   payload: T;
 }
 
-// API Response types
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -180,7 +226,6 @@ export interface ApiResponse<T = unknown> {
   meta?: Record<string, unknown>;
 }
 
-// OTP types
 export interface OTPRequestResponse {
   otpRequestId: UUID;
   expiresInSec: number;
@@ -192,7 +237,6 @@ export interface OTPVerifyRequest {
   otpCode: string;
 }
 
-// User search
 export interface UserSearchResult {
   userId: UUID;
   username: string;

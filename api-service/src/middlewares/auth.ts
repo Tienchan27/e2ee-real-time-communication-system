@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { pool } from "../db.js";
 import { fail } from "../http.js";
 import { verifyJwt } from "../security.js";
+import { isUuid } from "../validation.js";
 
 export async function authRequired(req: Request, res: Response, next: NextFunction) {
   const requestId = randomUUID();
@@ -15,9 +16,17 @@ export async function authRequired(req: Request, res: Response, next: NextFuncti
 
   const token = authorization.slice("Bearer ".length).trim();
   const payload = token ? verifyJwt(token, config.jwtAccessSecret) : null;
-  const sessionId = payload?.sessionId;
+  const sessionId = payload?.sid;
+  const deviceId = payload?.deviceId;
 
-  if (!payload || typeof sessionId !== "string") {
+  if (
+    !payload ||
+    typeof sessionId !== "string" ||
+    typeof deviceId !== "string" ||
+    !isUuid(payload.sub) ||
+    !isUuid(sessionId) ||
+    !isUuid(deviceId)
+  ) {
     return fail(res, 401, "AUTH_TOKEN_EXPIRED", "Access token is invalid or expired", requestId);
   }
 
@@ -47,6 +56,7 @@ export async function authRequired(req: Request, res: Response, next: NextFuncti
     req.auth = {
       userId: session.user_id,
       sessionId: session.session_id,
+      deviceId,
     };
 
     return next();

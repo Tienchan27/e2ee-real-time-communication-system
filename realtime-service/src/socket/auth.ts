@@ -27,13 +27,11 @@ function createAuthError(message = "AUTH_INVALID"): ExtendedError {
 }
 
 function readAccessToken(socket: Socket): string | null {
-  // Client nen gui token qua socket.handshake.auth.accessToken theo contract.
   const authToken = socket.handshake.auth?.accessToken;
   if (typeof authToken === "string" && authToken.trim()) {
     return authToken.trim();
   }
 
-  // Ho tro Authorization header de de test bang tool/script.
   const authorization = socket.handshake.headers.authorization;
   if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
     return authorization.slice("Bearer ".length).trim();
@@ -43,7 +41,6 @@ function readAccessToken(socket: Socket): string | null {
 }
 
 function decodeBase64Url(input: string): Buffer {
-  // JWT dung base64url, Node Buffer can chuyen ve base64 thong thuong.
   const padded = input.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(input.length / 4) * 4, "=");
   return Buffer.from(padded, "base64");
 }
@@ -89,7 +86,6 @@ function authContextFromClaims(claims: JwtClaims): AuthContext {
     throw createAuthError();
   }
 
-  // JWT exp tinh bang giay Unix time, con Date.now() tinh bang mili-giay.
   if (expiresAt <= Math.floor(Date.now() / 1000)) {
     throw createAuthError("AUTH_TOKEN_EXPIRED");
   }
@@ -102,8 +98,6 @@ function authContextFromClaims(claims: JwtClaims): AuthContext {
 }
 
 function authContextFromDevToken(token: string): AuthContext {
-  // Token dev co dang: dev:<userId>:<deviceId>:<sessionId>
-  // Chi dung local khi API login/JWT chua san sang.
   const [prefix, userId, deviceId, sessionId] = token.split(":");
   if (prefix !== "dev" || !userId || !deviceId || !sessionId) {
     throw createAuthError();
@@ -122,7 +116,6 @@ function authContextFromDevToken(token: string): AuthContext {
 
 function requireJwtSecret(secret: string): string {
   if (!secret) {
-    // Neu thieu secret, realtime khong duoc phep chap nhan JWT that.
     throw createAuthError();
   }
 

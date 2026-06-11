@@ -1,43 +1,46 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import "./AuthPages.css";
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register, isLoading, error: authError } = useAuth();
+  const { register, verifyOtp, isLoading, error: authError } = useAuth();
   const [step, setStep] = useState<"register" | "otp">("register");
   const [otpRequestId, setOtpRequestId] = useState("");
-  const [expiresInSec, setExpiresInSec] = useState(0);
+  const [countdown, setCountdown] = useState(0);
 
-  // Register form
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
 
-  // OTP form
   const [otpCode, setOtpCode] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const { verifyOtp } = useAuth();
+
+  useEffect(() => {
+    if (step !== "otp" || countdown <= 0) return;
+    const id = setInterval(() => setCountdown((c) => c - 1), 1000);
+    return () => clearInterval(id);
+  }, [step, countdown]);
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (!email || !username || !password || !displayName) {
-      setError("Please fill in all fields");
+      setError("Vui lòng điền đầy đủ thông tin");
       return;
     }
 
     try {
       const response = await register(email, username, password, displayName);
       setOtpRequestId(response.otpRequestId);
-      setExpiresInSec(response.expiresInSec);
+      setCountdown(response.expiresInSec);
       setStep("otp");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Registration failed";
+      const errorMsg = err instanceof Error ? err.message : "Đăng ký thất bại";
       setError(errorMsg);
     }
   };
@@ -47,7 +50,7 @@ export function RegisterPage() {
     setError("");
 
     if (!otpCode || otpCode.length !== 6) {
-      setError("OTP must be 6 digits");
+      setError("Mã OTP phải có 6 chữ số");
       return;
     }
 
@@ -56,7 +59,7 @@ export function RegisterPage() {
       await verifyOtp(otpRequestId, otpCode);
       navigate("/home");
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "OTP verification failed";
+      const errorMsg = err instanceof Error ? err.message : "Xác minh OTP thất bại";
       setError(errorMsg);
     } finally {
       setVerifyLoading(false);
@@ -67,36 +70,52 @@ export function RegisterPage() {
     return (
       <div className="auth-page">
         <div className="auth-container">
-          <h1>E2EE Chat</h1>
-          <h2>Verify Email</h2>
+          <div className="auth-logo">
+            <h1>E2EE Chat</h1>
+          </div>
+          <div className="auth-step-indicator">
+            <span className="auth-step-dot" />
+            <span className="auth-step-dot active" />
+          </div>
+          <p className="auth-subtitle">Xác nhận email</p>
           <form onSubmit={handleOtpSubmit}>
             <div className="form-group">
-              <label htmlFor="otpCode">OTP Code (check your email)</label>
+              <label htmlFor="otpCode">Mã OTP (kiểm tra hộp thư email)</label>
               <input
                 id="otpCode"
                 type="text"
+                inputMode="numeric"
                 value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.slice(0, 6))}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
                 maxLength={6}
                 disabled={verifyLoading}
+                autoFocus
               />
-              <small>OTP expires in {expiresInSec} seconds</small>
+              <small className={countdown <= 0 ? "countdown-expired" : ""}>
+                {countdown > 0
+                  ? `OTP hết hạn sau ${countdown} giây`
+                  : "OTP đã hết hạn"}
+              </small>
             </div>
             {(error || authError) && (
               <div className="error-message">{error || authError}</div>
             )}
-            <button type="submit" disabled={verifyLoading || isLoading}>
-              {verifyLoading || isLoading ? "Verifying..." : "Verify"}
+            <button
+              type="submit"
+              className="auth-submit"
+              disabled={verifyLoading || isLoading}
+            >
+              {verifyLoading || isLoading ? "Đang xác nhận..." : "Xác nhận"}
             </button>
           </form>
-          <p>
+          <p className="auth-footer">
             <button
               type="button"
               className="link-button"
               onClick={() => setStep("register")}
             >
-              Back to register
+              Quay lại
             </button>
           </p>
         </div>
@@ -107,8 +126,14 @@ export function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="auth-container">
-        <h1>E2EE Chat</h1>
-        <h2>Register</h2>
+        <div className="auth-logo">
+          <h1>E2EE Chat</h1>
+        </div>
+        <div className="auth-step-indicator">
+          <span className="auth-step-dot active" />
+          <span className="auth-step-dot" />
+        </div>
+        <p className="auth-subtitle">Tạo tài khoản mới</p>
         <form onSubmit={handleRegisterSubmit}>
           <div className="form-group">
             <label htmlFor="email">Email</label>
@@ -117,12 +142,12 @@ export function RegisterPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@example.com"
+              placeholder="email@example.com"
               disabled={isLoading}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="username">Username</label>
+            <label htmlFor="username">Tên đăng nhập</label>
             <input
               id="username"
               type="text"
@@ -133,18 +158,18 @@ export function RegisterPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="displayName">Display Name</label>
+            <label htmlFor="displayName">Tên hiển thị</label>
             <input
               id="displayName"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your Display Name"
+              placeholder="Tên của bạn"
               disabled={isLoading}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">Mật khẩu</label>
             <input
               id="password"
               type="password"
@@ -157,18 +182,18 @@ export function RegisterPage() {
           {(error || authError) && (
             <div className="error-message">{error || authError}</div>
           )}
-          <button type="submit" disabled={isLoading}>
-            {isLoading ? "Registering..." : "Register"}
+          <button type="submit" className="auth-submit" disabled={isLoading}>
+            {isLoading ? "Đang đăng ký..." : "Đăng ký"}
           </button>
         </form>
-        <p>
-          Already have an account?{" "}
+        <p className="auth-footer">
+          Đã có tài khoản?{" "}
           <button
             type="button"
             className="link-button"
             onClick={() => navigate("/login")}
           >
-            Login here
+            Đăng nhập
           </button>
         </p>
       </div>

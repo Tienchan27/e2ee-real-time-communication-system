@@ -8,10 +8,13 @@ export type AppConfig = {
   allowDevSocketAuth: boolean;
   allowDevConversationAccess: boolean;
   allowDevMessagePersist: boolean;
+  callInviteTimeoutMs: number;
+  staleCleanupIntervalMs: number;
+  socketPingIntervalMs: number;
+  socketPingTimeoutMs: number;
 };
 
 function readCsvEnv(value: string | undefined, fallback: string): string[] {
-  // Tach bien moi truong dang CSV thanh mang origin hop le cho Socket.IO CORS.
   return (value || fallback)
     .split(",")
     .map((item) => item.trim())
@@ -31,12 +34,13 @@ export function loadConfig(): AppConfig {
     jwtAccessSecret: process.env.JWT_ACCESS_SECRET || "",
     apiInternalBaseUrl: process.env.API_INTERNAL_BASE_URL || "http://api-service:3000",
     apiInternalToken: process.env.API_INTERNAL_TOKEN || "",
-    // Cho phep dung token dev khi API login/JWT chua hoan thien.
     allowDevSocketAuth: nodeEnv !== "production",
-    // Tam thoi cho phep join conversation o local khi API membership chua co.
     allowDevConversationAccess:
-      nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS !== "false",
-    // Tam thoi fake persist o local khi API-19 chua co endpoint internal persist.
+      nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS === "true",
     allowDevMessagePersist: nodeEnv !== "production" && process.env.ALLOW_DEV_MESSAGE_PERSIST === "true",
+    callInviteTimeoutMs: Number(process.env.CALL_INVITE_TIMEOUT_MS || 30_000),
+    staleCleanupIntervalMs: Number(process.env.STALE_CLEANUP_INTERVAL_MS || 15_000),
+    socketPingIntervalMs: Number(process.env.SOCKET_PING_INTERVAL_MS || 25_000),
+    socketPingTimeoutMs: Number(process.env.SOCKET_PING_TIMEOUT_MS || 20_000),
   };
 }

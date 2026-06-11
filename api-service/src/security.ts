@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 
 export type JwtPayload = Record<string, unknown> & {
   sub: string;
@@ -37,11 +37,11 @@ export function verifySecret(secret: string, storedHash: string) {
 }
 
 export function sha256(input: string) {
-  return createHmac("sha256", "api-service").update(input).digest("base64url");
+  return createHash("sha256").update(input).digest("base64url");
 }
 
 export function randomOtpCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 export function randomToken() {

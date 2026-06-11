@@ -8,6 +8,10 @@ node_modules/
 !.env.example
 !.env.prod.example
 
+# deploy secrets + rendered prod configs (server-only artifacts)
+scripts/deploy.env
+infra/nginx/nginx.ssl.conf
+
 # build
 dist/
 build/
@@ -31,3 +35,6 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# claude code
+.claude/
