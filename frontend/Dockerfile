@@ -1,19 +1,19 @@
-FROM node:20-alpine AS development
+FROM node:22-bookworm-slim AS development
 WORKDIR /app
-RUN apk add --no-cache wget
+RUN apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=optional
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
 
-FROM node:20-alpine AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 ARG VITE_API_BASE_URL=/api/v1
 ARG VITE_SOCKET_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_SOCKET_BASE_URL=$VITE_SOCKET_BASE_URL
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --include=optional
 COPY . .
 RUN npm run build
 

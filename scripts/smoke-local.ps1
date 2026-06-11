@@ -28,4 +28,9 @@ Write-Host "Realtime /ready (in-container)..."
 docker compose exec -T realtime-service wget -qO- http://127.0.0.1:4000/ready | Out-Null
 Write-Host "Realtime ready OK"
 
+Write-Host "API JWT claim contract (npm test in-container)..."
+docker compose exec -T api-service npm test
+if ($LASTEXITCODE -ne 0) { throw "API JWT claim tests failed" }
+Write-Host "API JWT claim tests OK"
+
 Write-Host "All smoke checks passed."

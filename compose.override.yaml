@@ -4,7 +4,7 @@ services:
     volumes:
       - ./api-service:/app
       - api_node_modules:/app/node_modules
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "npm install && npm run migrate && npm run dev"
 
   realtime-service:
     volumes:
@@ -16,7 +16,7 @@ services:
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    command: sh -c "npm install --include=optional && npm run dev -- --host 0.0.0.0 --port 5173"
 
 volumes:
   api_node_modules:

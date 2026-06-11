@@ -95,12 +95,13 @@ Template files (copy, không commit `.env` thật):
 
 ## Realtime implementation review (2026-05)
 
-Contract gate (không sửa code Realtime trong scope DevOps):
+Contract gate:
 
-- Realtime đã triển khai handshake JWT + dev token — khớp policy SYS-03 trong [`06-security.md`](06-security.md).
-- Dev bypass flags (`ALLOW_DEV_*`) chỉ cho local khi API membership/persist chưa sẵn sàng.
-- Realtime Owner nên cập nhật roadmap RT-01..RT-04 theo code thực tế.
-- Sign-off SYS-03: System Owner + Realtime Owner ack trên PR docs.
+- Realtime handshake JWT + dev token — khớp policy SYS-03 trong [`06-security.md`](06-security.md).
+- **API access JWT aligned (2026-05-24):** claims `sub`, `sid`, `deviceId`, `iat`, `exp`; issuer = API Service.
+- Dev bypass flags (`ALLOW_DEV_*`) chỉ cho local khi RT membership wire chưa bật.
+- Blocker Tuần 3 còn lại: FE auth UI (FE-01..06) + Realtime gọi membership API internal.
+- Realtime Owner nên cập nhật roadmap RT-01..RT-04; API Owner sign-off API-09 sau verify.
 
 ## Tiến độ hạ tầng local (System Owner)
 
@@ -128,7 +129,7 @@ Jobs (mục tiêu đầy đủ):
 Hiện tại trong repo:
 
 - [x] `compose-validate-dev` / `compose-validate-prod`
-- [x] `build-api`, `build-realtime`, `build-frontend`
+- [x] `build-api`, `build-realtime`, `build-frontend` (api includes `npm test`)
 - [x] `compose-build` (sau khi 3 build pass)
 - [x] `security-audit` (lite)
 - [ ] `lint`, `test` — bổ sung khi owners có script

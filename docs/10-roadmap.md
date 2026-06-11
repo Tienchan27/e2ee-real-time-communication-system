@@ -47,7 +47,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 |---|---|---|
 | Tuần 1 | Xong skeleton + docs nền | Docs nền ✓. DevOps infra (compose, nginx, Dockerfiles, env.example, README, CI skeleton) ✓. App boot 3 service: chờ owners |
 | Tuần 2 | Freeze contract V1 | `02-api.md` và `03-events.md` FROZEN 1.0.0 (2026-05-16) |
-| Tuần 3 | Auth + OTP + Discovery | User onboarding chạy E2E |
+| Tuần 3 | Auth + OTP + Discovery | User onboarding chạy E2E — API backend ~có; blocker: FE-01..06, RT membership wire |
 | Tuần 4 | Chat E2EE cơ bản | Gửi/nhận/lưu ciphertext ổn định |
 | Tuần 5 | Key lifecycle | Rotate + rekey recovery pass test |
 | Tuần 6 | Voice/Video call | Signaling call ổn định trên staging |
@@ -132,7 +132,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 6 | API-06 | Migration baseline PostgreSQL | API-01..API-05 | M | Todo |  |  |
 | 7 | API-07 | Endpoint request OTP | API-06 | S | Todo |  |  |
 | 8 | API-08 | Endpoint verify OTP | API-07 | S | Todo |  |  |
-| 9 | API-09 | Endpoint login (email/username) | API-08,FE-06,RT-02 | S | Todo |  |  |
+| 9 | API-09 | Endpoint login (email/username) | API-08,FE-06,RT-02 | S | Todo |  | Code có; JWT claims aligned 2026-05 — chờ API Owner sign-off |
 | 10 | API-10 | Endpoint refresh token rotation | API-09,FE-07 | S | Todo |  |  |
 | 11 | API-11 | Endpoint logout + revoke current session | API-10 | XS | Todo |  |  |
 | 12 | API-12 | Endpoint logout-all + revoke all sessions | API-11 | XS | Todo |  |  |
@@ -160,7 +160,7 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | STT | Task ID | Task chi tiết | Phụ thuộc | Ước lượng | Trạng thái | Deadline (tự điền) | Ghi chú |
 |---:|---|---|---|---|---|---|---|
 | 1 | RT-01 | Bootstrap Socket.IO server | Không | S | Todo |  |  |
-| 2 | RT-02 | Handshake auth middleware | RT-01,API-09,SYS-03 | S | Todo |  | Theo `03-events.md` |
+| 2 | RT-02 | Handshake auth middleware | RT-01,API-09,SYS-03 | S | Todo |  | Code có; verify sau JWT API align — chờ Realtime Owner sign-off |
 | 3 | RT-03 | Mapping `userId-deviceId-socketId` | RT-02 | S | Todo |  |  |
 | 4 | RT-04 | Room join/leave theo `conversationId` | RT-03,API-17,FE-11 | S | Todo |  |  |
 | 5 | RT-05 | `presence:subscribe` handler | RT-04 | XS | Todo |  |  |

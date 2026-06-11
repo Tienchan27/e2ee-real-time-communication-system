@@ -42,6 +42,8 @@ iat: number [required]
 exp: number [required]
 ```
 
+Issuer: **API Service**. Trên wire, claim phiên là `sid` (không alias `sessionId` trong JWT payload).
+
 ## Bảo mật OTP (đăng ký qua email)
 
 - OTP length: 6 digits.

@@ -4,6 +4,7 @@ declare global {
       auth?: {
         userId: string;
         sessionId: string;
+        deviceId: string;
       };
     }
   }

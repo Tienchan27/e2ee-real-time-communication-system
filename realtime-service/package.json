@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsc && node dist/index.js",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test:rt27": "node test/test-rt27.js",
+    "test:rt28": "node test/test-rt28.js"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +16,7 @@
   "description": "",
   "dependencies": {
     "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
   },
@@ -25,6 +28,7 @@
     "eslint": "^10.2.0",
     "prettier": "^3.8.3",
 
+    "socket.io-client": "^4.8.3",
     "tsx": "^4.20.6",
     "typescript": "^6.0.2"
   }
