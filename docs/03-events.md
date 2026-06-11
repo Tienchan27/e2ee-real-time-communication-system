@@ -97,6 +97,24 @@ status: string [required, online|offline|away]
 lastSeenAt: string(iso8601) [optional]
 ```
 
+## Nhóm sự kiện `realtime`
+
+### realtime:resubscribe
+- Bên gửi: Client
+- Bên nhận: Realtime
+- Mục đích: khôi phục room conversation và presence targets sau khi socket reconnect.
+
+Payload:
+```txt
+conversationIds: array<string(uuid-v7)> [optional]
+presenceTargets: array<string(uuid-v7)> [optional]
+```
+
+Hành vi khi thành công:
+- Realtime kiểm tra quyền từng conversation trước khi join room.
+- Realtime đăng ký lại presence targets và gửi `presence:update` hiện tại.
+- Realtime trả `system:ack`.
+
 ## Nhóm sự kiện `conversation`
 
 ### conversation:join
@@ -271,6 +289,7 @@ reason: string [optional]
 Payload:
 ```txt
 callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 sdp: string [required]
 sdpType: string [required, offer|answer]
 ```
@@ -280,6 +299,7 @@ sdpType: string [required, offer|answer]
 Payload:
 ```txt
 callId: string(uuid-v7) [required]
+conversationId: string(uuid-v7) [required]
 candidate: object [required]
 ```
 

@@ -1,5 +1,12 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
+import {
+  issueAccessToken,
+  normalizeDeviceInfo,
+  readDeviceIdFromSessionInfo,
+  resolveDeviceId,
+} from "../accessToken.js";
+import { createUuidV7 } from "../ids.js";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { fail, ok } from "../http.js";
@@ -9,7 +16,6 @@ import {
   randomOtpCode,
   randomToken,
   sha256,
-  signJwt,
   verifySecret,
 } from "../security.js";
 
@@ -26,17 +32,16 @@ function normalizeUsername(username: unknown) {
   return typeof username === "string" ? username.trim().toLowerCase() : "";
 }
 
-function accessToken(userId: string, sessionId: string) {
-  return signJwt(userId, config.jwtAccessSecret, config.accessTokenTtlSec, { sessionId });
-}
-
 async function createSessionAndRefreshToken(
   userId: string,
   deviceInfo: Record<string, unknown> = {},
 ) {
+  const normalizedDeviceInfo = normalizeDeviceInfo(deviceInfo);
+  const deviceId = resolveDeviceId(normalizedDeviceInfo);
+
   const sessionResult = await pool.query<{ id: string }>(
     "INSERT INTO sessions (user_id, device_info) VALUES ($1, $2) RETURNING id",
-    [userId, deviceInfo],
+    [userId, normalizedDeviceInfo],
   );
   const sessionId = sessionResult.rows[0].id;
   const refreshToken = randomToken();
@@ -53,6 +58,7 @@ async function createSessionAndRefreshToken(
 
   return {
     sessionId,
+    deviceId,
     refreshToken,
     refreshTokenId: tokenResult.rows[0].id,
   };
@@ -165,7 +171,7 @@ router.post("/register/verify-otp", async (req, res) => {
 
     return ok(res, {
       userId,
-      accessToken: accessToken(userId, session.sessionId),
+      accessToken: issueAccessToken(userId, session.sessionId, session.deviceId),
       refreshToken: session.refreshToken,
     });
   } catch (error) {
@@ -223,7 +229,7 @@ router.post("/login", async (req, res) => {
       displayName: user.display_name,
       avatarUrl: user.avatar_url,
     },
-    accessToken: accessToken(user.id, session.sessionId),
+    accessToken: issueAccessToken(user.id, session.sessionId, session.deviceId),
     refreshToken: session.refreshToken,
     expiresInSec: config.accessTokenTtlSec,
   });
@@ -274,6 +280,13 @@ router.post("/refresh", async (req, res) => {
       return fail(res, 401, "AUTH_TOKEN_EXPIRED", "Refresh token expired", requestId);
     }
 
+    const sessionResult = await client.query<{ device_info: unknown }>(
+      "SELECT device_info FROM sessions WHERE id = $1 LIMIT 1",
+      [token.session_id],
+    );
+    const deviceId =
+      readDeviceIdFromSessionInfo(sessionResult.rows[0]?.device_info) ?? createUuidV7();
+
     const newRefreshToken = randomToken();
     const expiresAt = new Date(Date.now() + config.refreshTokenTtlSec * 1000);
     const newTokenResult = await client.query<{ id: string }>(
@@ -292,7 +305,7 @@ router.post("/refresh", async (req, res) => {
     await client.query("COMMIT");
 
     return ok(res, {
-      accessToken: accessToken(token.user_id, token.session_id),
+      accessToken: issueAccessToken(token.user_id, token.session_id, deviceId),
       refreshToken: newRefreshToken,
       refreshTokenId: newTokenResult.rows[0].id,
       expiresInSec: config.accessTokenTtlSec,

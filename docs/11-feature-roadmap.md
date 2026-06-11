@@ -29,7 +29,7 @@ Tài liệu này gom lại toàn bộ task từ `10-roadmap.md` theo chức năn
 | API-05 | Thiết kế schema `receipts` | API Owner | API-04 | XS | Todo |  |  |
 | API-06 | Migration baseline PostgreSQL | API Owner | API-01..API-05 | M | Todo |  |  |
 | RT-01 | Bootstrap Socket.IO server | Realtime Owner | Không | S | Todo |  |  |
-| RT-02 | Handshake auth middleware | Realtime Owner | RT-01,API-09,SYS-03 | S | Todo |  |  |
+| RT-02 | Handshake auth middleware | Realtime Owner | RT-01,API-09,SYS-03 | S | Todo |  | Code có; verify với API JWT — chờ owner sign-off |
 | RT-03 | Mapping `userId-deviceId-socketId` | Realtime Owner | RT-02 | S | Todo |  |  |
 | RT-04 | Room join/leave theo `conversationId` | Realtime Owner | RT-03,API-17,FE-11 | S | Todo |  |  |
 | FE-01 | Tạo skeleton route auth/chat/call | FE Owner | Không | S | Todo |  |  |
@@ -44,7 +44,7 @@ Tài liệu này gom lại toàn bộ task từ `10-roadmap.md` theo chức năn
 |---|---|---|---|---|---|---|---|
 | API-07 | Endpoint request OTP | API Owner | API-06 | S | Todo |  |  |
 | API-08 | Endpoint verify OTP | API Owner | API-07 | S | Todo |  |  |
-| API-09 | Endpoint login (email/username) | API Owner | API-08,FE-06,RT-02 | S | Todo |  |  |
+| API-09 | Endpoint login (email/username) | API Owner | API-08,FE-06,RT-02 | S | Todo |  | Code có; JWT `sid`/`deviceId` aligned — chờ owner sign-off |
 | API-10 | Endpoint refresh token rotation | API Owner | API-09,FE-07 | S | Todo |  |  |
 | API-11 | Endpoint logout + revoke current session | API Owner | API-10 | XS | Todo |  |  |
 | API-12 | Endpoint logout-all + revoke all sessions | API Owner | API-11 | XS | Todo |  |  |

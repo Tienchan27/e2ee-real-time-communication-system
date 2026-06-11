@@ -93,6 +93,7 @@ Request:
 identifier: string [required, email hoặc username]
 password: string [required]
 deviceInfo: object [required]
+deviceInfo.deviceId: string(uuid-v7) [optional, server sinh UUID v7 nếu thiếu]
 ```
 
 Response:
@@ -138,6 +139,24 @@ Response:
 ```txt
 revokedSessionCount: number [required]
 ```
+
+## Access token JWT claims
+
+Issuer: **API Service**. Realtime và REST dùng chung access token từ login/refresh/verify-otp.
+
+Baseline (chi tiết: [`06-security.md`](06-security.md)):
+
+```txt
+sub: string(uuid-v7) [required]
+sid: string(uuid-v7) [required]
+deviceId: string(uuid-v7) [required]
+iat: number [required]
+exp: number [required]
+```
+
+Quy tắc:
+- Claim phiên là `sid` (không dùng tên `sessionId` trong JWT payload).
+- `deviceId` lấy từ `deviceInfo.deviceId` khi client gửi hợp lệ; API sinh UUID v7 nếu thiếu và lưu trong `sessions.device_info`.
 
 ## Tìm người dùng
 
@@ -315,3 +334,4 @@ readAt: string(iso8601) [required]
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-05-16 | System Owner | Initial freeze V1: UUID v7, naming ref `00`, contract status FROZEN |
+| 1.0.0-clarify | 2026-05-24 | System Owner | Clarify: optional `deviceInfo.deviceId`; JWT claims `sid`/`deviceId` (không đổi response shape) |
