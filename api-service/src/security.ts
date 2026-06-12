@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
 
 export type JwtPayload = Record<string, unknown> & {
   sub: string;
@@ -41,7 +41,7 @@ export function sha256(input: string) {
 }
 
 export function randomOtpCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 export function randomToken() {
