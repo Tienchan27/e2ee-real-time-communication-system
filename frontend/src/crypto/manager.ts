@@ -1,62 +1,11 @@
-// Simple E2EE encryption utilities using Web Crypto API
 export class CryptoManager {
-  private keyStore: Map<number, CryptoKey> = new Map();
+  // Per-conversation key store: conversationId → keyVersion → CryptoKey
+  private conversationKeys: Map<string, Map<number, CryptoKey>> = new Map();
 
-  /**
-   * Generate a new AES-256-GCM key
-   */
-  async generateKey(): Promise<CryptoKey> {
-    return crypto.subtle.generateKey(
-      {
-        name: "AES-GCM",
-        length: 256,
-      },
-      true, // extractable
-      ["encrypt", "decrypt"],
-    );
-  }
+  // ── AES-256-GCM encrypt/decrypt ──────────────────────────────────────────
 
-  /**
-   * Export key to JWK for storage (base64url encoded)
-   */
-  async exportKeyToJwk(key: CryptoKey): Promise<string> {
-    const jwk = await crypto.subtle.exportKey("jwk", key);
-    return btoa(JSON.stringify(jwk));
-  }
-
-  /**
-   * Import key from JWK (base64url encoded)
-   */
-  async importKeyFromJwk(jwkStr: string): Promise<CryptoKey> {
-    const jwk = JSON.parse(atob(jwkStr)) as JsonWebKey;
-    return crypto.subtle.importKey(
-      "jwk",
-      jwk,
-      { name: "AES-GCM" },
-      true,
-      ["encrypt", "decrypt"],
-    );
-  }
-
-  /**
-   * Store a key by version (keyVersion is used to track key rotation)
-   */
-  setKey(keyVersion: number, key: CryptoKey): void {
-    this.keyStore.set(keyVersion, key);
-  }
-
-  /**
-   * Get stored key by version
-   */
-  getKey(keyVersion: number): CryptoKey | undefined {
-    return this.keyStore.get(keyVersion);
-  }
-
-  /**
-   * Encrypt plaintext with AES-256-GCM
-   * Returns { ciphertext, nonce } both base64 encoded
-   */
   async encrypt(
+    conversationId: string,
     plaintext: string,
     keyVersion: number,
     aad?: Record<string, unknown>,
@@ -66,76 +15,145 @@ export class CryptoManager {
     algorithm: "aes-256-gcm";
     keyVersion: number;
   }> {
-    const key = this.getKey(keyVersion);
+    const key = this.getConversationKey(conversationId, keyVersion);
     if (!key) {
-      throw new Error(`Key version ${keyVersion} not found`);
+      throw new Error(`No key for conversation ${conversationId} version ${keyVersion}`);
     }
 
-    // Generate random nonce (96 bits for GCM)
     const nonce = crypto.getRandomValues(new Uint8Array(12));
-
-    // Prepare data
     const data = new TextEncoder().encode(plaintext);
-    const algorithm = {
+    const algorithm: AesGcmParams = {
       name: "AES-GCM",
       iv: nonce,
       ...(aad && { additionalData: new TextEncoder().encode(JSON.stringify(aad)) }),
     };
 
-    // Encrypt
-    const ciphertext = await crypto.subtle.encrypt(
-      algorithm,
-      key,
-      data,
-    );
+    const ciphertext = await crypto.subtle.encrypt(algorithm, key, data);
 
     return {
-      ciphertext: this.arrayBufferToBase64(ciphertext),
-      nonce: this.arrayBufferToBase64(nonce),
+      ciphertext: this.bufferToBase64(ciphertext),
+      nonce: this.bufferToBase64(nonce),
       algorithm: "aes-256-gcm",
       keyVersion,
     };
   }
 
-  /**
-   * Decrypt ciphertext with AES-256-GCM
-   * Expects { ciphertext, nonce } both base64 encoded
-   */
   async decrypt(
+    conversationId: string,
     ciphertext: string,
     nonce: string,
     keyVersion: number,
     aad?: Record<string, unknown>,
   ): Promise<string> {
-    const key = this.getKey(keyVersion);
+    const key = this.getConversationKey(conversationId, keyVersion);
     if (!key) {
-      throw new Error(`Key version ${keyVersion} not found`);
+      throw new Error(`No key for conversation ${conversationId} version ${keyVersion}`);
     }
 
-    // Decode from base64
-    const ciphertextBuffer = this.base64ToArrayBuffer(ciphertext);
-    const nonceBuffer = this.base64ToArrayBuffer(nonce);
-
-    const algorithm = {
+    const algorithm: AesGcmParams = {
       name: "AES-GCM",
-      iv: nonceBuffer,
+      iv: this.base64ToBuffer(nonce),
       ...(aad && { additionalData: new TextEncoder().encode(JSON.stringify(aad)) }),
     };
 
-    // Decrypt
     const plaintext = await crypto.subtle.decrypt(
       algorithm,
       key,
-      ciphertextBuffer as BufferSource,
+      this.base64ToBuffer(ciphertext) as BufferSource,
     );
 
     return new TextDecoder().decode(plaintext);
   }
 
-  /**
-   * Encode Uint8Array to base64
-   */
-  private arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+  // ── Per-conversation key store ───────────────────────────────────────────
+
+  setConversationKey(conversationId: string, keyVersion: number, key: CryptoKey): void {
+    let versions = this.conversationKeys.get(conversationId);
+    if (!versions) {
+      versions = new Map();
+      this.conversationKeys.set(conversationId, versions);
+    }
+    versions.set(keyVersion, key);
+  }
+
+  getConversationKey(conversationId: string, keyVersion: number): CryptoKey | undefined {
+    return this.conversationKeys.get(conversationId)?.get(keyVersion);
+  }
+
+  hasConversationKey(conversationId: string): boolean {
+    const versions = this.conversationKeys.get(conversationId);
+    return versions !== undefined && versions.size > 0;
+  }
+
+  // ── ECDH key exchange (P-256) ────────────────────────────────────────────
+
+  async generateEcdhKeyPair(): Promise<CryptoKeyPair> {
+    return crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" },
+      true,
+      ["deriveBits"],
+    );
+  }
+
+  async exportEcdhPublicKey(publicKey: CryptoKey): Promise<string> {
+    const spki = await crypto.subtle.exportKey("spki", publicKey);
+    return this.bufferToBase64(spki);
+  }
+
+  async importEcdhPublicKey(base64: string): Promise<CryptoKey> {
+    return crypto.subtle.importKey(
+      "spki",
+      this.base64ToBuffer(base64),
+      { name: "ECDH", namedCurve: "P-256" },
+      false,
+      [],
+    );
+  }
+
+  // Derive AES-256-GCM key from ECDH shared secret via HKDF-SHA256
+  // salt = conversationId (UTF-8 bytes), info = "e2ee-chat-v1"
+  async deriveSharedKey(
+    myPrivateKey: CryptoKey,
+    peerPublicKey: CryptoKey,
+    conversationId: string,
+  ): Promise<CryptoKey> {
+    const sharedBits = await crypto.subtle.deriveBits(
+      { name: "ECDH", public: peerPublicKey },
+      myPrivateKey,
+      256,
+    );
+
+    const hkdfKey = await crypto.subtle.importKey("raw", sharedBits, "HKDF", false, ["deriveKey"]);
+
+    return crypto.subtle.deriveKey(
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+        salt: new TextEncoder().encode(conversationId),
+        info: new TextEncoder().encode("e2ee-chat-v1"),
+      },
+      hkdfKey,
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+  }
+
+  // ── JWK export/import (for key persistence) ──────────────────────────────
+
+  async exportKeyToJwk(key: CryptoKey): Promise<string> {
+    const jwk = await crypto.subtle.exportKey("jwk", key);
+    return btoa(JSON.stringify(jwk));
+  }
+
+  async importKeyFromJwk(jwkStr: string): Promise<CryptoKey> {
+    const jwk = JSON.parse(atob(jwkStr)) as JsonWebKey;
+    return crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+  }
+
+  // ── Buffer helpers ────────────────────────────────────────────────────────
+
+  private bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
@@ -144,10 +162,7 @@ export class CryptoManager {
     return btoa(binary);
   }
 
-  /**
-   * Decode base64 to Uint8Array
-   */
-  private base64ToArrayBuffer(base64: string): Uint8Array {
+  private base64ToBuffer(base64: string): Uint8Array {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {

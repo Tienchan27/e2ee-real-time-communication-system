@@ -36,10 +36,10 @@ export function ChatPage() {
     loadMessages(conversationId);
   }, [conversationId]);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversationId]);
+  }, [conversationMessages]);
 
   const conversation = conversationId ? conversations.get(conversationId) : null;
   const conversationMessages = conversationId ? messages.get(conversationId) || [] : [];
