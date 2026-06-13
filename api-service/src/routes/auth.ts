@@ -10,6 +10,7 @@ import { createUuidV7 } from "../ids.js";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { fail, ok } from "../http.js";
+import { sendRegistrationOtp } from "../mailer.js";
 import { authRequired } from "../middlewares/auth.js";
 import {
   hashSecret,
@@ -92,11 +93,21 @@ router.post("/register/request-otp", async (req, res) => {
       `,
       [email, username, hashSecret(password), displayName, hashSecret(otpCode)],
     );
+    const otpRequestId = result.rows[0].id;
+
+    try {
+      await sendRegistrationOtp(email, otpCode);
+    } catch (error) {
+      await pool.query("DELETE FROM otp_requests WHERE id = $1", [otpRequestId]);
+      console.error("Could not send registration OTP email", error);
+      return fail(res, 503, "INTERNAL_ERROR", "Could not send OTP email", requestId);
+    }
 
     const data: Record<string, unknown> = {
-      otpRequestId: result.rows[0].id,
+      otpRequestId,
       expiresInSec: 600,
       cooldownSec: 60,
+      delivery: "email",
     };
 
     if (config.nodeEnv === "development") {
