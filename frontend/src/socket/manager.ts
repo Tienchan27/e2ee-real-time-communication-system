@@ -1,15 +1,10 @@
 import { io, type Socket } from "socket.io-client";
-import type {
-  UUID,
-  Message,
-  Presence,
-  CallState,
-} from "../types/index.js";
+import type { UUID, Message, Presence, CallState } from "../types/index.js";
 
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_BASE_URL || "";
+const SOCKET_URL = import.meta.env.VITE_SOCKET_BASE_URL || "";
 
-// Event listeners
+// ── Listener types ────────────────────────────────────────────────────────────
+
 type PresenceUpdateListener = (presence: Presence) => void;
 type ChatMessageListener = (message: Message) => void;
 type SystemAckListener = (requestId: UUID, meta?: Record<string, unknown>) => void;
@@ -21,6 +16,34 @@ type SystemErrorListener = (
 ) => void;
 type CallIncomingListener = (call: CallState) => void;
 
+export type KeyExchangeInitEvent = {
+  conversationId: UUID;
+  sessionProposalId: UUID;
+  curve: "p256" | "x25519";
+  publicKey: string;
+  senderUserId: UUID;
+  senderDeviceId: UUID;
+};
+
+export type KeyExchangeResponseEvent = {
+  conversationId: UUID;
+  sessionProposalId: UUID;
+  publicKey: string;
+  accepted: boolean;
+  senderUserId: UUID;
+};
+
+type KeyExchangeInitListener = (event: KeyExchangeInitEvent) => void;
+type KeyExchangeResponseListener = (event: KeyExchangeResponseEvent) => void;
+
+// Holds the private key for an in-flight key exchange initiated by this device
+export type PendingKeyExchange = {
+  privateKey: CryptoKey;
+  conversationId: UUID;
+};
+
+// ── SocketManager ─────────────────────────────────────────────────────────────
+
 export class SocketManager {
   private socket: Socket | null = null;
   private listeners = {
@@ -29,14 +52,17 @@ export class SocketManager {
     systemAck: new Set<SystemAckListener>(),
     systemError: new Set<SystemErrorListener>(),
     callIncoming: new Set<CallIncomingListener>(),
+    keyExchangeInit: new Set<KeyExchangeInitListener>(),
+    keyExchangeResponse: new Set<KeyExchangeResponseListener>(),
   };
+
+  // sessionProposalId → pending exchange (private key + conversationId)
+  readonly pendingKeyExchanges: Map<string, PendingKeyExchange> = new Map();
 
   connect(accessToken: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket = io(SOCKET_URL, {
-        auth: {
-          accessToken,
-        },
+        auth: { accessToken },
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
@@ -71,82 +97,56 @@ export class SocketManager {
     return this.socket?.connected ?? false;
   }
 
-  // Setup listeners for incoming events
   private setupEventListeners() {
     if (!this.socket) return;
 
-    // Presence updates
-    this.socket.on(
-      "presence:update",
-      (presence: Presence) => {
-        this.listeners.presenceUpdate.forEach((listener) =>
-          listener(presence),
-        );
-      },
-    );
-
-    // Chat messages
-    this.socket.on("chat:message", (message: Message) => {
-      this.listeners.chatMessage.forEach((listener) => listener(message));
+    this.socket.on("presence:update", (presence: Presence) => {
+      this.listeners.presenceUpdate.forEach((l) => l(presence));
     });
 
-    // System ack
+    this.socket.on("chat:message", (message: Message) => {
+      this.listeners.chatMessage.forEach((l) => l(message));
+    });
+
     this.socket.on(
       "system:ack",
-      (data: {
-        requestId: UUID;
-        status: string;
-        meta?: Record<string, unknown>;
-      }) => {
-        this.listeners.systemAck.forEach((listener) =>
-          listener(data.requestId, data.meta),
-        );
+      (data: { requestId: UUID; status: string; meta?: Record<string, unknown> }) => {
+        this.listeners.systemAck.forEach((l) => l(data.requestId, data.meta));
       },
     );
 
-    // System error
     this.socket.on(
       "system:error",
-      (data: {
-        requestId: UUID;
-        errorCode: string;
-        errorMessage: string;
-        retryable: boolean;
-      }) => {
-        this.listeners.systemError.forEach((listener) =>
-          listener(
-            data.requestId,
-            data.errorCode,
-            data.errorMessage,
-            data.retryable,
-          ),
+      (data: { requestId: UUID; errorCode: string; errorMessage: string; retryable: boolean }) => {
+        this.listeners.systemError.forEach((l) =>
+          l(data.requestId, data.errorCode, data.errorMessage, data.retryable),
         );
       },
     );
 
-    // Call incoming
     this.socket.on("call:incoming", (call: CallState) => {
-      this.listeners.callIncoming.forEach((listener) => listener(call));
+      this.listeners.callIncoming.forEach((l) => l(call));
+    });
+
+    this.socket.on("key:exchange:init", (payload: KeyExchangeInitEvent) => {
+      this.listeners.keyExchangeInit.forEach((l) => l(payload));
+    });
+
+    this.socket.on("key:exchange:response", (payload: KeyExchangeResponseEvent) => {
+      this.listeners.keyExchangeResponse.forEach((l) => l(payload));
     });
   }
 
-  // Send events
-  private emitEvent<T>(event: string, payload: T): UUID {
-    const requestId = this.generateRequestId();
-    const timestamp = new Date().toISOString();
+  // ── Emit helpers ──────────────────────────────────────────────────────────
 
+  private emitEvent<T>(event: string, payload: T): UUID {
+    const requestId = this.generateUUID() as UUID;
     this.socket?.emit(event, {
       requestId,
-      timestamp,
+      timestamp: new Date().toISOString(),
       payload,
     });
-
     return requestId;
-  }
-
-  private generateRequestId(): UUID {
-    // Generate UUID v4
-    return this.generateUUID() as UUID;
   }
 
   private generateUUID(): string {
@@ -157,94 +157,72 @@ export class SocketManager {
     });
   }
 
-  // Conversation events
+  // ── Conversation events ───────────────────────────────────────────────────
+
   joinConversation(conversationId: UUID): Promise<UUID> {
     return new Promise((resolve, reject) => {
-      const requestId = this.emitEvent("conversation:join", {
-        conversationId,
-      });
-
-      const ackListener = (id: UUID) => {
-        if (id === requestId) {
-          this.removeAckListener(ackListener);
-          resolve(requestId);
-        }
+      const requestId = this.emitEvent("conversation:join", { conversationId });
+      const onAck = (id: UUID) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        resolve(requestId);
       };
-
-      const errorListener = (
-        id: UUID,
-        errorCode: string,
-        errorMessage: string,
-      ) => {
-        if (id === requestId) {
-          this.removeErrorListener(errorListener);
-          reject(new Error(`${errorCode}: ${errorMessage}`));
-        }
+      const onErr = (id: UUID, code: string, msg: string) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        reject(new Error(`${code}: ${msg}`));
       };
-
-      this.listeners.systemAck.add(ackListener);
-      this.listeners.systemError.add(errorListener);
+      this.listeners.systemAck.add(onAck);
+      this.listeners.systemError.add(onErr);
     });
   }
 
   leaveConversation(conversationId: UUID): Promise<UUID> {
     return new Promise((resolve, reject) => {
-      const requestId = this.emitEvent("conversation:leave", {
-        conversationId,
-      });
-
-      const ackListener = (id: UUID) => {
-        if (id === requestId) {
-          this.removeAckListener(ackListener);
-          resolve(requestId);
-        }
+      const requestId = this.emitEvent("conversation:leave", { conversationId });
+      const onAck = (id: UUID) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        resolve(requestId);
       };
-
-      const errorListener = (
-        id: UUID,
-        errorCode: string,
-        errorMessage: string,
-      ) => {
-        if (id === requestId) {
-          this.removeErrorListener(errorListener);
-          reject(new Error(`${errorCode}: ${errorMessage}`));
-        }
+      const onErr = (id: UUID, code: string, msg: string) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        reject(new Error(`${code}: ${msg}`));
       };
-
-      this.listeners.systemAck.add(ackListener);
-      this.listeners.systemError.add(errorListener);
+      this.listeners.systemAck.add(onAck);
+      this.listeners.systemError.add(onErr);
     });
   }
 
-  // Presence events
+  // ── Presence events ───────────────────────────────────────────────────────
+
   subscribePresence(targets: UUID[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("presence:subscribe", { targets });
-
-      const ackListener = (id: UUID) => {
-        if (id === requestId) {
-          this.removeAckListener(ackListener);
-          resolve();
-        }
+      const onAck = (id: UUID) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        resolve();
       };
-
-      const errorListener = (
-        id: UUID,
-        errorCode: string,
-        errorMessage: string,
-      ) => {
-        if (id === requestId) {
-          this.removeErrorListener(errorListener);
-          reject(new Error(`${errorCode}: ${errorMessage}`));
-        }
+      const onErr = (id: UUID, code: string, msg: string) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        reject(new Error(`${code}: ${msg}`));
       };
-
-      this.listeners.systemAck.add(ackListener);
-      this.listeners.systemError.add(errorListener);
+      this.listeners.systemAck.add(onAck);
+      this.listeners.systemError.add(onErr);
     });
   }
 
-  // Chat events
+  // ── Chat events ───────────────────────────────────────────────────────────
+
   sendMessage(payload: {
     conversationId: UUID;
     messageId: UUID;
@@ -257,45 +235,71 @@ export class SocketManager {
   }): Promise<void> {
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("chat:send", payload);
-
-      const ackListener = (id: UUID) => {
-        if (id === requestId) {
-          this.removeAckListener(ackListener);
-          resolve();
-        }
+      const onAck = (id: UUID) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        resolve();
       };
-
-      const errorListener = (
-        id: UUID,
-        errorCode: string,
-        errorMessage: string,
-      ) => {
-        if (id === requestId) {
-          this.removeErrorListener(errorListener);
-          reject(new Error(`${errorCode}: ${errorMessage}`));
-        }
+      const onErr = (id: UUID, code: string, msg: string) => {
+        if (id !== requestId) return;
+        this.listeners.systemAck.delete(onAck);
+        this.listeners.systemError.delete(onErr);
+        reject(new Error(`${code}: ${msg}`));
       };
-
-      this.listeners.systemAck.add(ackListener);
-      this.listeners.systemError.add(errorListener);
+      this.listeners.systemAck.add(onAck);
+      this.listeners.systemError.add(onErr);
     });
   }
 
   markDelivered(conversationId: UUID, messageId: UUID): void {
-    this.emitEvent("chat:delivered", {
-      conversationId,
-      messageId,
-    });
+    this.emitEvent("chat:delivered", { conversationId, messageId });
   }
 
   markRead(conversationId: UUID, messageIds: UUID[]): void {
-    this.emitEvent("chat:read", {
+    this.emitEvent("chat:read", { conversationId, messageIds });
+  }
+
+  // ── Key exchange events ───────────────────────────────────────────────────
+
+  initiateKeyExchange(
+    conversationId: UUID,
+    sessionProposalId: UUID,
+    publicKeyBase64: string,
+  ): UUID {
+    return this.emitEvent("key:exchange:init", {
       conversationId,
-      messageIds,
+      sessionProposalId,
+      curve: "p256",
+      publicKey: publicKeyBase64,
     });
   }
 
-  // Listener management
+  respondToKeyExchange(
+    conversationId: UUID,
+    sessionProposalId: UUID,
+    publicKeyBase64: string,
+  ): UUID {
+    return this.emitEvent("key:exchange:response", {
+      conversationId,
+      sessionProposalId,
+      publicKey: publicKeyBase64,
+      accepted: true,
+    });
+  }
+
+  onKeyExchangeInit(listener: KeyExchangeInitListener): () => void {
+    this.listeners.keyExchangeInit.add(listener);
+    return () => this.listeners.keyExchangeInit.delete(listener);
+  }
+
+  onKeyExchangeResponse(listener: KeyExchangeResponseListener): () => void {
+    this.listeners.keyExchangeResponse.add(listener);
+    return () => this.listeners.keyExchangeResponse.delete(listener);
+  }
+
+  // ── Presence / call listener registration ────────────────────────────────
+
   onPresenceUpdate(listener: PresenceUpdateListener) {
     this.listeners.presenceUpdate.add(listener);
     return () => this.listeners.presenceUpdate.delete(listener);
@@ -309,14 +313,6 @@ export class SocketManager {
   onCallIncoming(listener: CallIncomingListener) {
     this.listeners.callIncoming.add(listener);
     return () => this.listeners.callIncoming.delete(listener);
-  }
-
-  private removeAckListener(listener: SystemAckListener) {
-    this.listeners.systemAck.delete(listener);
-  }
-
-  private removeErrorListener(listener: SystemErrorListener) {
-    this.listeners.systemError.delete(listener);
   }
 }
 
