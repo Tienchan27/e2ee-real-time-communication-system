@@ -63,11 +63,16 @@ displayName: string [required]
 Response:
 ```txt
 otpRequestId: string(uuid-v7)
-expiresInSec: number
-cooldownSec: number
+expiresInSec: number       [= 600, tương đương 10 phút]
+cooldownSec: number        [= 60]
+delivery: string           [= "email"]
+otpCode: string            [chỉ có khi NODE_ENV=development và email gửi thành công]
 ```
 
 Quy tắc:
+- SMTP phải được cấu hình đủ (`SMTP_HOST/PORT/USER/PASS/FROM`). Thiếu → 503 `INTERNAL_ERROR`.
+- OTP được gửi qua email (Nodemailer). Server không trả mã OTP trong production.
+- Trong môi trường `development`, response có thêm `otpCode` để test không cần mailbox thật.
 - Giới hạn tần suất theo IP và theo email.
 - Không để lộ email đã tồn tại hay chưa trong thông báo phản hồi.
 
@@ -329,9 +334,18 @@ readAt: string(iso8601) [required]
 - FE Owner phải xử lý đầy đủ các mã lỗi chuẩn.
 - System Owner duyệt mọi thay đổi breaking change.
 
+## Vấn đề đã biết (Known Issues — chưa fix)
+
+> Những điểm dưới đây là lệch lạc đang tồn tại giữa spec contract và implementation thực tế. Ghi lại để team ưu tiên fix.
+
+- **GET `/conversations` response shape mismatch:** API trả `data` là array trực tiếp (`data: [...]`), nhưng `ApiClient.getConversations()` phía FE kỳ vọng `data: { conversations: [...] }`. Kết quả: `result.conversations` là `undefined` → trang Home luôn rỗng.
+- **GET `/conversations/:id/messages` tương tự:** API trả array trực tiếp, FE client kỳ vọng `{ messages: [...] }`.
+- **Chưa có endpoint tìm người dùng:** `GET /users/search` chưa triển khai ở API, nhưng FE client đã có `searchUsers()`.
+
 ## Changelog
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
 | 1.0.0 | 2026-05-16 | System Owner | Initial freeze V1: UUID v7, naming ref `00`, contract status FROZEN |
 | 1.0.0-clarify | 2026-05-24 | System Owner | Clarify: optional `deviceInfo.deviceId`; JWT claims `sid`/`deviceId` (không đổi response shape) |
+| 1.0.1-impl | 2026-06-13 | System Owner | Document thực tế: request-otp thêm field `delivery`, `otpCode` (dev only); SMTP bắt buộc; known issues shape mismatch |

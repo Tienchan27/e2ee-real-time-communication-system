@@ -16,9 +16,7 @@ Quy tắc:
 
 ## Thông tin xác thực và mật khẩu
 
-- Password hash algorithm:
-  - Primary: `Argon2id`.
-  - Fallback: `bcrypt` cost >= 12 if Argon2 not available.
+- Password hash algorithm: `scrypt` (Node.js built-in `crypto.scryptSync`, N=16384, r=8, p=1, keyLen=64 bytes). Salt: 16 random bytes. Stored as `scrypt:<salt>:<hash>` (base64url).
 - Never store plaintext password.
 - Enforce password policy:
   - min 8 chars.
@@ -27,7 +25,7 @@ Quy tắc:
 ## JWT và phiên đăng nhập
 
 - Access token lifetime: 15 minutes.
-- Refresh token lifetime: 7 days.
+- Refresh token lifetime: 30 ngày (mặc định; cấu hình qua `REFRESH_TOKEN_TTL_SEC`).
 - Refresh token rotation: enabled.
 - Reuse detection: revoke session chain on replay.
 - Refresh token chỉ lưu dưới dạng băm trong kho phiên.
@@ -47,9 +45,12 @@ Issuer: **API Service**. Trên wire, claim phiên là `sid` (không alias `sessi
 ## Bảo mật OTP (đăng ký qua email)
 
 - OTP length: 6 digits.
-- OTP expiry: 5 minutes.
+- OTP expiry: 10 minutes (code: `NOW() + INTERVAL '10 minutes'`).
 - Max attempts: 5.
 - Cooldown resend: 60 seconds.
+- OTP gửi qua email bằng SMTP (Nodemailer). SMTP bắt buộc cấu hình đủ 5 biến: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` — thiếu → endpoint trả 503.
+- OTP code dùng `crypto.randomInt` (CSPRNG). Hash bằng `scrypt` trước khi lưu DB.
+- Trong `NODE_ENV=development`, response còn trả thêm `otpCode` để test không cần mailbox thật (chỉ khi email đã gửi thành công).
 - Per email rate limit and per IP rate limit required.
 - Source of truth cho OTP records là PostgreSQL.
 
@@ -87,7 +88,7 @@ Policy SYS-03 — chi tiết triển khai khớp [`03-events.md`](03-events.md) 
 Quy tắc bổ sung:
 
 - `JWT_ACCESS_SECRET` phải **khớp** giữa API Service và Realtime Service.
-- Dev bypass (`ALLOW_DEV_CONVERSATION_ACCESS`, `ALLOW_DEV_MESSAGE_PERSIST`) chỉ bật local; staging/prod phải tắt.
+- Dev bypass `ALLOW_DEV_MESSAGE_PERSIST` chỉ bật local; staging/prod phải tắt. (`ALLOW_DEV_CONVERSATION_ACCESS` đã bị xóa — membership check hiện dùng HTTP thật tới API internal.)
 - Không log access token, dev token, hoặc JWT payload trong log thường.
 
 ## Bảo mật đường truyền
