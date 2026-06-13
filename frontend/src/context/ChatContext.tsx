@@ -1,10 +1,5 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
-import type {
-  UUID,
-  Conversation,
-  Message,
-  Presence,
-} from "../types/index.js";
+import type { UUID, Conversation, Message, Presence } from "../types/index.js";
 import { socketManager } from "../socket/manager.js";
 import { cryptoManager } from "../crypto/manager.js";
 import { generateUUID } from "../utils/uuid.js";
@@ -22,185 +17,263 @@ interface ChatContextValue {
   subscribeToPresence: (userIds: UUID[]) => Promise<void>;
 }
 
-export const ChatContext = createContext<ChatContextValue | undefined>(
-  undefined,
-);
+export const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const [conversations, setConversations] = useState<Map<UUID, Conversation>>(
-    new Map(),
-  );
+  const [conversations, setConversations] = useState<Map<UUID, Conversation>>(new Map());
   const [messages, setMessages] = useState<Map<UUID, Message[]>>(new Map());
   const [presences, setPresences] = useState<Map<UUID, Presence>>(new Map());
-  const [currentConversationId, setCurrentConversationId] = useState<UUID | null>(
-    null,
-  );
+  const [currentConversationId, setCurrentConversationId] = useState<UUID | null>(null);
 
   const messageSeqRef = useRef<Map<UUID, number>>(new Map());
   const subscribedUsersRef = useRef<Set<UUID>>(new Set());
 
-  // Setup socket listeners
-  useEffect(() => {
-    if (!user) return;
+  // ── Decryption ─────────────────────────────────────────────────────────────
 
-    const unsubscribePresence = socketManager.onPresenceUpdate((presence) => {
-      setPresences((prev) => new Map(prev).set(presence.userId, presence));
-    });
-
-    const unsubscribeMessage = socketManager.onChatMessage((message) => {
-      setMessages((prev) => {
-        const convoMessages = prev.get(message.conversationId) || [];
-        const updated = new Map(prev);
-        updated.set(
-          message.conversationId,
-          [...convoMessages, message],
-        );
-        return updated;
-      });
-
-      // Auto-decrypt if we have the key
-      decryptMessage(message);
-    });
-
-    return () => {
-      unsubscribePresence();
-      unsubscribeMessage();
-    };
-  }, [user]);
-
-  const decryptMessage = useCallback(async (message: Message) => {
+  const decryptMessage = useCallback(async (message: Message): Promise<Message> => {
     try {
-      const key = cryptoManager.getKey(message.envelope.keyVersion);
-      if (!key) return;
-
+      const key = cryptoManager.getConversationKey(message.conversationId, message.envelope.keyVersion);
+      if (!key) return message;
       const plaintext = await cryptoManager.decrypt(
+        message.conversationId,
         message.envelope.ciphertext,
         message.envelope.nonce,
         message.envelope.keyVersion,
         message.envelope.aad,
       );
-
-      // Update message with decrypted plaintext
-      message.plaintext = plaintext;
-    } catch (err) {
-      console.error("Failed to decrypt message:", err);
+      return { ...message, plaintext };
+    } catch {
+      return message;
     }
   }, []);
 
-  const loadConversations = useCallback(async () => {
+  // ── Key exchange ───────────────────────────────────────────────────────────
+
+  // Respond to a key:exchange:init from a peer. Called from the global listener below.
+  const handleIncomingKeyExchangeInit = useCallback(
+    async (event: Parameters<Parameters<typeof socketManager.onKeyExchangeInit>[0]>[0]) => {
+      try {
+        const peerPublicKey = await cryptoManager.importEcdhPublicKey(event.publicKey);
+        const keyPair = await cryptoManager.generateEcdhKeyPair();
+        const sharedKey = await cryptoManager.deriveSharedKey(
+          keyPair.privateKey,
+          peerPublicKey,
+          event.conversationId,
+        );
+        cryptoManager.setConversationKey(event.conversationId, 1, sharedKey);
+
+        const myPublicKeyBase64 = await cryptoManager.exportEcdhPublicKey(keyPair.publicKey);
+        socketManager.respondToKeyExchange(
+          event.conversationId,
+          event.sessionProposalId,
+          myPublicKeyBase64,
+        );
+
+        // Re-decrypt messages in this conversation now that we have a key
+        setMessages((prev) => {
+          const existing = prev.get(event.conversationId);
+          if (!existing) return prev;
+          const updated = new Map(prev);
+          // Trigger async decrypt; state will update via the promise chain below
+          Promise.all(existing.map(decryptMessage)).then((decrypted) => {
+            setMessages((p) => new Map(p).set(event.conversationId, decrypted));
+          });
+          return updated;
+        });
+      } catch (err) {
+        console.error("[KeyExchange] Failed to respond to init:", err);
+      }
+    },
+    [decryptMessage],
+  );
+
+  // Initiate key exchange for a conversation when we open it without a key
+  const initiateKeyExchange = useCallback(
+    (conversationId: UUID): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const sessionProposalId = generateUUID() as UUID;
+
+        cryptoManager.generateEcdhKeyPair().then(async (keyPair) => {
+          const myPublicKeyBase64 = await cryptoManager.exportEcdhPublicKey(keyPair.publicKey);
+
+          // Store private key so the response handler can complete the derivation
+          socketManager.pendingKeyExchanges.set(sessionProposalId, {
+            privateKey: keyPair.privateKey,
+            conversationId,
+          });
+
+          const timeout = setTimeout(() => {
+            socketManager.pendingKeyExchanges.delete(sessionProposalId);
+            // No peer online yet — resolve quietly; they'll respond when they join
+            resolve();
+          }, 8000);
+
+          const unsubscribe = socketManager.onKeyExchangeResponse(async (response) => {
+            if (response.sessionProposalId !== sessionProposalId) return;
+            clearTimeout(timeout);
+            unsubscribe();
+
+            const pending = socketManager.pendingKeyExchanges.get(sessionProposalId);
+            if (!pending || !response.accepted) {
+              socketManager.pendingKeyExchanges.delete(sessionProposalId);
+              resolve();
+              return;
+            }
+
+            try {
+              const peerPublicKey = await cryptoManager.importEcdhPublicKey(response.publicKey);
+              const sharedKey = await cryptoManager.deriveSharedKey(
+                pending.privateKey,
+                peerPublicKey,
+                conversationId,
+              );
+              cryptoManager.setConversationKey(conversationId, 1, sharedKey);
+              socketManager.pendingKeyExchanges.delete(sessionProposalId);
+              resolve();
+            } catch (err) {
+              socketManager.pendingKeyExchanges.delete(sessionProposalId);
+              reject(err);
+            }
+          });
+
+          socketManager.initiateKeyExchange(conversationId, sessionProposalId, myPublicKeyBase64);
+        });
+      });
+    },
+    [],
+  );
+
+  // ── Socket listeners ───────────────────────────────────────────────────────
+
+  useEffect(() => {
     if (!user) return;
 
+    const unsubPresence = socketManager.onPresenceUpdate((presence) => {
+      setPresences((prev) => new Map(prev).set(presence.userId, presence));
+    });
+
+    const unsubMessage = socketManager.onChatMessage(async (message) => {
+      const decrypted = await decryptMessage(message);
+      setMessages((prev) => {
+        const existing = prev.get(message.conversationId) || [];
+        return new Map(prev).set(message.conversationId, [...existing, decrypted]);
+      });
+    });
+
+    const unsubKeyInit = socketManager.onKeyExchangeInit(handleIncomingKeyExchangeInit);
+
+    return () => {
+      unsubPresence();
+      unsubMessage();
+      unsubKeyInit();
+    };
+  }, [user, decryptMessage, handleIncomingKeyExchangeInit]);
+
+  // ── API actions ────────────────────────────────────────────────────────────
+
+  const loadConversations = useCallback(async () => {
+    if (!user) return;
     try {
-      // Import apiClient here to avoid circular dependency
       const { apiClient } = await import("../api/client.js");
       const result = await apiClient.getConversations(50);
-
-      const newConversations = new Map(conversations);
-      for (const conv of result.conversations) {
-        newConversations.set(conv.conversationId, conv);
-      }
-      setConversations(newConversations);
+      setConversations((prev) => {
+        const updated = new Map(prev);
+        for (const conv of result.conversations) {
+          updated.set(conv.conversationId, conv);
+        }
+        return updated;
+      });
     } catch (err) {
       console.error("Failed to load conversations:", err);
     }
-  }, [user, conversations]);
+  }, [user]);
 
   const loadMessages = useCallback(
     async (conversationId: UUID) => {
       if (!user) return;
-
       try {
         const { apiClient } = await import("../api/client.js");
         const result = await apiClient.getMessages(conversationId, 50);
 
-        // Decrypt all messages
-        for (const msg of result.messages) {
-          await decryptMessage(msg);
+        // Join the Socket.IO room first
+        await socketManager.joinConversation(conversationId);
+
+        // Initiate key exchange if no key exists yet for this conversation
+        if (!cryptoManager.hasConversationKey(conversationId)) {
+          await initiateKeyExchange(conversationId);
         }
 
-        setMessages((prev) => {
-          const updated = new Map(prev);
-          updated.set(conversationId, result.messages);
-          return updated;
-        });
-
-        // Join conversation room on socket
-        await socketManager.joinConversation(conversationId);
+        // Decrypt historical messages (key may now be available)
+        const decrypted = await Promise.all(result.messages.map(decryptMessage));
+        setMessages((prev) => new Map(prev).set(conversationId, decrypted));
       } catch (err) {
         console.error("Failed to load messages:", err);
       }
     },
-    [user, decryptMessage],
+    [user, decryptMessage, initiateKeyExchange],
   );
 
   const sendMessage = useCallback(
     async (conversationId: UUID, plaintext: string) => {
       if (!user) return;
 
-      try {
-        // Get or initialize sequence number
-        const currentSeq = messageSeqRef.current.get(conversationId) || 0;
-        const clientMessageSeq = currentSeq + 1;
-        messageSeqRef.current.set(conversationId, clientMessageSeq);
+      if (!cryptoManager.hasConversationKey(conversationId)) {
+        throw new Error("Secure channel not established yet. Please wait.");
+      }
 
-        // Encrypt message
-        const encrypted = await cryptoManager.encrypt(plaintext, 1); // keyVersion = 1 for now
-        const messageId = generateUUID() as UUID;
+      const currentSeq = messageSeqRef.current.get(conversationId) || 0;
+      const clientMessageSeq = currentSeq + 1;
+      messageSeqRef.current.set(conversationId, clientMessageSeq);
 
-        // Send via socket
-        await socketManager.sendMessage({
-          conversationId,
-          messageId,
+      const encrypted = await cryptoManager.encrypt(conversationId, plaintext, 1);
+      const messageId = generateUUID() as UUID;
+
+      await socketManager.sendMessage({
+        conversationId,
+        messageId,
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        algorithm: "aes-256-gcm",
+        keyVersion: 1,
+        clientMessageSeq,
+      });
+
+      // Optimistic local message for immediate UI update
+      const localMessage: Message = {
+        messageId,
+        conversationId,
+        senderUserId: user.userId,
+        senderUsername: user.username,
+        senderDisplayName: user.displayName,
+        senderAvatarUrl: user.avatarUrl,
+        envelope: {
           ciphertext: encrypted.ciphertext,
           nonce: encrypted.nonce,
           algorithm: "aes-256-gcm",
           keyVersion: 1,
           clientMessageSeq,
-        });
+        },
+        plaintext,
+        deliveredTo: [],
+        readBy: [],
+        createdAt: new Date().toISOString() as Message["createdAt"],
+      };
 
-        // Create local message for immediate UI update
-        const localMessage: Message = {
-          messageId,
-          conversationId,
-          senderUserId: user.userId,
-          senderUsername: user.username,
-          senderDisplayName: user.displayName,
-          senderAvatarUrl: user.avatarUrl,
-          envelope: {
-            ciphertext: encrypted.ciphertext,
-            nonce: encrypted.nonce,
-            algorithm: "aes-256-gcm",
-            keyVersion: 1,
-            clientMessageSeq,
-          },
-          plaintext,
-          deliveredTo: [],
-          readBy: [],
-          createdAt: new Date().toISOString() as any,
-        };
-
-        setMessages((prev) => {
-          const convoMessages = prev.get(conversationId) || [];
-          const updated = new Map(prev);
-          updated.set(conversationId, [...convoMessages, localMessage]);
-          return updated;
-        });
-      } catch (err) {
-        console.error("Failed to send message:", err);
-        throw err;
-      }
+      setMessages((prev) => {
+        const existing = prev.get(conversationId) || [];
+        return new Map(prev).set(conversationId, [...existing, localMessage]);
+      });
     },
     [user],
   );
 
   const subscribeToPresence = useCallback(async (userIds: UUID[]) => {
-    const newUserIds = userIds.filter((id) => !subscribedUsersRef.current.has(id));
-    if (newUserIds.length === 0) return;
-
+    const newIds = userIds.filter((id) => !subscribedUsersRef.current.has(id));
+    if (newIds.length === 0) return;
     try {
-      await socketManager.subscribePresence(newUserIds);
-      newUserIds.forEach((id) => subscribedUsersRef.current.add(id));
+      await socketManager.subscribePresence(newIds);
+      newIds.forEach((id) => subscribedUsersRef.current.add(id));
     } catch (err) {
       console.error("Failed to subscribe to presence:", err);
     }
@@ -218,11 +291,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     subscribeToPresence,
   };
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
 export function useChat() {
