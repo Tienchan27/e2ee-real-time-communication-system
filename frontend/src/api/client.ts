@@ -32,9 +32,15 @@ export class ApiError extends Error {
 
 export class ApiClient {
   private accessToken: string | null = null;
+  private refreshHandler: (() => Promise<string>) | null = null;
+  private isRefreshing = false;
 
   setAccessToken(token: string | null) {
     this.accessToken = token;
+  }
+
+  setRefreshHandler(fn: (() => Promise<string>) | null) {
+    this.refreshHandler = fn;
   }
 
   private async request<T>(
@@ -51,10 +57,29 @@ export class ApiClient {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    const response = await fetch(url, { ...options, headers });
+
+    // Silent token refresh on 401 — retry original request once with the new token
+    if (response.status === 401 && this.refreshHandler && !this.isRefreshing) {
+      this.isRefreshing = true;
+      try {
+        const newToken = await this.refreshHandler();
+        this.accessToken = newToken;
+        const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
+        const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
+        const retryData = (await retryResponse.json()) as ApiResponse<T>;
+        if (!retryResponse.ok || !retryData.success) {
+          throw new ApiError(
+            retryResponse.status,
+            retryData.error?.code || "UNKNOWN_ERROR",
+            retryData.error?.requestId,
+          );
+        }
+        return retryData.data as T;
+      } finally {
+        this.isRefreshing = false;
+      }
+    }
 
     const data = (await response.json()) as ApiResponse<T>;
 

@@ -74,6 +74,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [accessToken, user, refreshToken]);
 
+  // Register silent token refresh handler
+  useEffect(() => {
+    if (!accessToken || !refreshToken || !user) {
+      apiClient.setRefreshHandler(null);
+      return;
+    }
+
+    apiClient.setRefreshHandler(async () => {
+      try {
+        const response = await apiClient.refreshToken(refreshToken);
+        setAccessToken(response.accessToken);
+        setRefreshToken(response.refreshToken);
+        return response.accessToken;
+      } catch {
+        // Refresh token expired or revoked — force re-login
+        setUser(null);
+        setAccessToken(null);
+        setRefreshToken(null);
+        socketManager.disconnect();
+        throw new Error("Session expired. Please log in again.");
+      }
+    });
+  }, [accessToken, refreshToken, user]);
+
   const login = useCallback(async (identifier: string, password: string) => {
     setError(null);
     setIsLoading(true);
