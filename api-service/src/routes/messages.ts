@@ -49,29 +49,38 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
     nonce: string;
     algorithm: string;
     key_version: number;
+    client_message_seq: number | null;
     created_at: Date;
+    sender_username: string;
+    sender_display_name: string;
+    sender_avatar_url: string | null;
   }>(
     `
       SELECT
-        id,
-        conversation_id,
-        sender_user_id,
-        ciphertext,
-        nonce,
-        algorithm,
-        key_version,
-        created_at
-      FROM messages
-      WHERE conversation_id = $1
+        m.id,
+        m.conversation_id,
+        m.sender_user_id,
+        m.ciphertext,
+        m.nonce,
+        m.algorithm,
+        m.key_version,
+        m.client_message_seq,
+        m.created_at,
+        u.username AS sender_username,
+        u.display_name AS sender_display_name,
+        u.avatar_url AS sender_avatar_url
+      FROM messages m
+      JOIN users u ON u.id = m.sender_user_id
+      WHERE m.conversation_id = $1
         AND (
           $2::uuid IS NULL
-          OR (created_at, id) ${comparator} (
+          OR (m.created_at, m.id) ${comparator} (
             SELECT created_at, id
             FROM messages
             WHERE id = $2 AND conversation_id = $1
           )
         )
-      ORDER BY created_at ${direction}, id ${direction}
+      ORDER BY m.created_at ${direction}, m.id ${direction}
       LIMIT $3
     `,
     [conversationId, cursorId, limit + 1],
@@ -83,23 +92,27 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
     rows = rows.reverse();
   }
 
-  return ok(
-    res,
-    rows.map((row) => ({
+  return ok(res, {
+    messages: rows.map((row) => ({
       messageId: row.id,
       conversationId: row.conversation_id,
       senderUserId: row.sender_user_id,
-      ciphertext: row.ciphertext,
-      nonce: row.nonce,
-      algorithm: row.algorithm,
-      keyVersion: row.key_version,
+      senderUsername: row.sender_username,
+      senderDisplayName: row.sender_display_name,
+      senderAvatarUrl: row.sender_avatar_url ?? null,
+      envelope: {
+        ciphertext: row.ciphertext,
+        nonce: row.nonce,
+        algorithm: row.algorithm,
+        keyVersion: row.key_version,
+        clientMessageSeq: row.client_message_seq ?? 0,
+      },
+      deliveredTo: [],
+      readBy: [],
       createdAt: row.created_at.toISOString(),
     })),
-    {
-      hasMore,
-      nextCursor: hasMore ? rows[0]?.id ?? null : null,
-    },
-  );
+    nextCursor: hasMore ? rows[0]?.id ?? null : null,
+  });
 });
 
 router.post("/messages/:messageId/delivered", authRequired, async (req, res) => {

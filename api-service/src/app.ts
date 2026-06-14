@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { internalRouter } from "./routes/internal.js";
 import { messagesRouter } from "./routes/messages.js";
+import { usersRouter } from "./routes/users.js";
 
 export function createApp() {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp() {
   app.use("/api/v1/conversations", conversationsRouter);
   app.use("/api/v1", messagesRouter);
   app.use("/api/v1/internal", internalRouter);
+  app.use("/api/v1/users", usersRouter);
 
   app.get("/health", (_req, res) => {
     res.json({

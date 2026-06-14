@@ -97,14 +97,20 @@ router.get("/", authRequired, async (req, res) => {
   const result = await pool.query<{
     conversation_id: string;
     type: string;
+    created_at: Date;
     updated_at: Date;
     message_id: string | null;
     sender_user_id: string | null;
     ciphertext: string | null;
-    algorithm: string | null;
-    key_version: number | null;
     message_created_at: Date | null;
     unread_count: string;
+    members: Array<{
+      userId: string;
+      username: string;
+      displayName: string;
+      avatarUrl: string | null;
+      joinedAt: string;
+    }>;
   }>(
     `
       WITH cursor_row AS (
@@ -115,12 +121,11 @@ router.get("/", authRequired, async (req, res) => {
       SELECT
         c.id AS conversation_id,
         c.type,
+        c.created_at,
         c.updated_at,
         lm.id AS message_id,
         lm.sender_user_id,
         lm.ciphertext,
-        lm.algorithm,
-        lm.key_version,
         lm.created_at AS message_created_at,
         (
           SELECT COUNT(*)
@@ -134,13 +139,25 @@ router.get("/", authRequired, async (req, res) => {
                 AND receipt.user_id = $1
                 AND receipt.status = 'read'
             )
-        )::text AS unread_count
+        )::text AS unread_count,
+        ARRAY(
+          SELECT json_build_object(
+            'userId', u.id,
+            'username', u.username,
+            'displayName', u.display_name,
+            'avatarUrl', u.avatar_url,
+            'joinedAt', cm.created_at
+          )
+          FROM conversation_members cm
+          JOIN users u ON u.id = cm.user_id
+          WHERE cm.conversation_id = c.id
+        ) AS members
       FROM conversations c
       JOIN conversation_members own_membership
         ON own_membership.conversation_id = c.id
        AND own_membership.user_id = $1
       LEFT JOIN LATERAL (
-        SELECT id, sender_user_id, ciphertext, algorithm, key_version, created_at
+        SELECT id, sender_user_id, ciphertext, created_at
         FROM messages
         WHERE conversation_id = c.id
         ORDER BY created_at DESC, id DESC
@@ -160,26 +177,27 @@ router.get("/", authRequired, async (req, res) => {
 
   const hasMore = result.rows.length > limit;
   const rows = result.rows.slice(0, limit);
-  const items = rows.map((row) => ({
+  const conversations = rows.map((row) => ({
     conversationId: row.conversation_id,
     type: row.type,
+    members: row.members ?? [],
     ...(row.message_id
       ? {
           lastMessagePreview: {
             messageId: row.message_id,
             senderUserId: row.sender_user_id,
-            ciphertext: row.ciphertext,
-            algorithm: row.algorithm,
-            keyVersion: row.key_version,
-            createdAt: row.message_created_at?.toISOString(),
+            preview: row.ciphertext,
+            sentAt: row.message_created_at?.toISOString(),
           },
         }
       : {}),
     unreadCount: Number(row.unread_count),
+    createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   }));
 
-  return ok(res, items, {
+  return ok(res, {
+    conversations,
     nextCursor: hasMore ? rows.at(-1)?.conversation_id ?? null : null,
   });
 });
