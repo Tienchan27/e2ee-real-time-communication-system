@@ -218,8 +218,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     async (conversationId: UUID, plaintext: string) => {
       if (!user) return;
 
+      // If key missing (e.g. peer was offline during initial exchange), retry once
       if (!cryptoManager.hasConversationKey(conversationId)) {
-        throw new Error("Secure channel not established yet. Please wait.");
+        await initiateKeyExchange(conversationId);
+      }
+
+      if (!cryptoManager.hasConversationKey(conversationId)) {
+        throw new Error("Cannot establish secure connection. Make sure the other user is online.");
       }
 
       const currentSeq = messageSeqRef.current.get(conversationId) || 0;
@@ -265,7 +270,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return new Map(prev).set(conversationId, [...existing, localMessage]);
       });
     },
-    [user],
+    [user, initiateKeyExchange],
   );
 
   const subscribeToPresence = useCallback(async (userIds: UUID[]) => {
