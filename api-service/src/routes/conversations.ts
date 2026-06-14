@@ -69,7 +69,7 @@ router.post("/direct", authRequired, async (req, res) => {
     const membersResult = await client.query<MemberRow & { joined_at: Date }>(
       `
         SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
-               cm.created_at AS joined_at
+               cm.joined_at
         FROM conversation_members cm
         JOIN users u ON u.id = cm.user_id
         WHERE cm.conversation_id = $1
@@ -158,7 +158,7 @@ router.get("/", authRequired, async (req, res) => {
             'username', u.username,
             'displayName', u.display_name,
             'avatarUrl', u.avatar_url,
-            'joinedAt', cm.created_at
+            'joinedAt', cm.joined_at
           )
           FROM conversation_members cm
           JOIN users u ON u.id = cm.user_id
