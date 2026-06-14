@@ -104,7 +104,77 @@ Nhánh lỗi:
 Phân công theo bước:
 - Phụ trách FE: quyền truy cập media và trạng thái giao diện cuộc gọi.
 - Phụ trách Realtime: routing signaling và timeout.
-- System Owner: chốt call state machine và tiêu chí fallback TURN.
+- System Owner: call state machine và tiêu chí fallback TURN — xem hai section dưới.
+
+### Call State Machine (SYS-07)
+
+Trạng thái và chuyển tiếp hợp lệ:
+
+```
+idle ──call:start──► ringing ──call:accept──► connecting ──ICE ok──► active
+                        │                         │                      │
+                    reject/end               end/ICE timeout          call:end
+                    /timeout                      │                      │
+                        └──────────────────────► ended ◄────────────────┘
+```
+
+| State | Phía | Ý nghĩa |
+|-------|------|---------|
+| `idle` | Client | Chưa có cuộc gọi |
+| `ringing` | Client + Server | `call:start` đã emit; chờ accept/reject |
+| `connecting` | Client only | `call:accept` nhận được; đang trao đổi SDP/ICE |
+| `active` | Client + Server | Media đã thiết lập (ICE connected) |
+| `ended` | Client + Server | Terminal — cuộc gọi kết thúc |
+
+**Quy tắc chuyển tiếp:**
+
+| Từ | Sự kiện | Đến | Ghi chú |
+|----|---------|-----|---------|
+| `idle` | `call:start` emit | `ringing` | Caller side |
+| `idle` | `call:incoming` nhận | `ringing` | Callee side |
+| `ringing` | `call:accept` | `connecting` | Callee gửi, caller nhận |
+| `ringing` | `call:reject` hoặc `call:end` | `ended` | Bất kỳ bên |
+| `ringing` | invite timeout | `ended` | `CALL_INVITE_TIMEOUT_MS` = 30s (realtime-service config) |
+| `connecting` | ICE `connected` | `active` | Client-side only; server coi là active ngay sau accept |
+| `connecting` | `call:end` | `ended` | Bất kỳ bên |
+| `connecting` | ICE timeout | `ended` | `ICE_CONNECTION_TIMEOUT_MS` = 10s (xem `frontend/src/webrtc/config.ts`) |
+| `active` | `call:end` | `ended` | Bất kỳ bên, kèm `reason` tuỳ chọn |
+| `active` | mất kết nối socket | renegotiation window | Thử reconnect trong `CALL_RENEGOTIATION_WINDOW_MS` = 20s; quá hạn → `ended` |
+
+**Edge cases:**
+- **Call collision** (hai bên cùng `call:start` cùng lúc): bên có `userId` nhỏ hơn (lexicographic UUID) là caller; bên kia nhận `call:incoming` rồi tự `call:reject` call mình vừa khởi tạo.
+- **ICE restart đồng thời**: caller (initiator) giữ quyền restart; callee bỏ qua offer nếu đang chờ offer của mình.
+- **Phân tầng server/client**: Server (`callStore.ts`) chỉ track `ringing → active → ended`. State `connecting` là FE-side — server không biết ICE state.
+
+### Chính sách TURN Fallback (SYS-08)
+
+**Thứ tự ưu tiên ICE candidate:**
+1. `host` — kết nối LAN trực tiếp
+2. `srflx` — STUN: NAT traversal (không cần server relay)
+3. `relay` — TURN: qua server relay; dùng khi hai loại trên thất bại
+
+**Ngưỡng và hành vi:**
+
+| Tình huống | Ngưỡng | Hành vi |
+|-----------|--------|---------|
+| ICE gathering chậm | `ICE_GATHERING_TIMEOUT_MS` = 4s | Dừng chờ, dùng candidates hiện có |
+| P2P không kết nối được | `ICE_CONNECTION_TIMEOUT_MS` = 10s | Trigger ICE restart với TURN relay |
+| ICE restart thất bại lần 2 | — | Fallback audio-only (nếu là video call) |
+| Audio cũng fail | — | `call:end` với `reason: "ice_failed"` |
+
+**Cấu hình `iceTransportPolicy`:**
+- Mặc định: `"all"` — thử cả P2P và relay song song
+- Chỉ dùng `"relay"` khi buộc phải qua TURN (debug hoặc môi trường NAT strict); không dùng mặc định vì tốn băng thông TURN server
+
+**Ngưỡng fallback audio-only (SYS-20):**
+- Trigger khi estimated available bitrate < `AUDIO_ONLY_FALLBACK_MIN_BITRATE_BPS` = 50 kbps liên tục trong `AUDIO_ONLY_FALLBACK_HOLD_DURATION_MS` = 3s
+- Thực thi: FE dừng video track, giữ audio track — implement tại FE-23
+- Constants export từ `frontend/src/webrtc/config.ts` để FE-23/25 dùng
+
+**Cấu hình môi trường:**
+- Local dev: bỏ `VITE_TURN_URL` trống → chỉ dùng Google STUN fallback
+- Staging/prod: coturn trên VM; điền đủ `VITE_TURN_URL`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
+- Credentials rotate theo chu kỳ vận hành (xem `docs/07-deployment-cicd.md`)
 
 ## Luồng E: Reconnect và đồng bộ lại
 

@@ -66,8 +66,8 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 4 | SYS-04 | Chốt tiêu chuẩn E2EE envelope + replay rule | SYS-02,API-19,RT-14 | S | Done | 2026-06-13 | Spec trong `05-e2ee.md`; implemented FE + RT |
 | 5 | SYS-05 | Chốt threshold rotate (`N`,`T`) + grace window | SYS-04 | XS | Done | 2026-06-13 | N=50 tin, T=30 phút, grace=2 phút — `05-e2ee.md` |
 | 6 | SYS-06 | Chốt tie-break khi rotate đồng thời | SYS-05 | XS | Done | 2026-06-13 | `keyRotationStore.ts` realtime-service |
-| 7 | SYS-07 | Chốt call state machine voice/video | SYS-02,RT-20,FE-25 | S | Todo |  |  |
-| 8 | SYS-08 | Chốt TURN fallback policy | SYS-07,RT-22 | XS | Todo |  |  |
+| 7 | SYS-07 | Chốt call state machine voice/video | SYS-02,RT-20,FE-25 | S | Done | 2026-06-14 | State machine + edge cases trong `04-flow.md` |
+| 8 | SYS-08 | Chốt TURN fallback policy | SYS-07,RT-22 | XS | Done | 2026-06-14 | Ngưỡng ICE + audio-only trong `04-flow.md` |
 | 9 | SYS-09 | Review consistency `02`-`03`-`04`-`05` | SYS-03,SYS-06,SYS-08 | M | Todo |  | Chạy mỗi cuối tuần |
 | 10 | SYS-10 | Thiết kế checklist kiểm thử tích hợp E2E | SYS-09 | S | Todo |  | Theo `08-qa-test-plan.md` |
 | 11 | SYS-11 | Thiết kế workflow CI | SYS-09,API-28,RT-28,FE-28 | M | Done | 2026-06-13 | CI: compose validate + build 3 service + compose-build + audit lite — `.github/workflows/ci.yml` |
@@ -78,8 +78,8 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 16 | SYS-16 | Chốt runbook demo + rollback | SYS-15 | S | Todo |  |  |
 | 17 | SYS-17 | Quản lý blocker escalation toàn team | Không | XS | In Progress |  | Lặp lại mỗi tuần |
 | 18 | SYS-18 | Final inspection docs-code consistency | SYS-16,FE-28,API-28,RT-28 | M | Todo |  | Tuần cuối |
-| 19 | SYS-19 | Implement cấu hình runtime WebRTC (iceServers, timeout, retry policy) | SYS-08,RT-22,FE-25 | M | Todo |  | Task thực thi kỹ thuật |
-| 20 | SYS-20 | Implement fallback TURN và tiêu chí chuyển audio-only khi mạng yếu | SYS-19,RT-23,FE-23 | M | Todo |  | Task thực thi kỹ thuật |
+| 19 | SYS-19 | Implement cấu hình runtime WebRTC (iceServers, timeout, retry policy) | SYS-08,RT-22,FE-25 | M | Done | 2026-06-14 | `frontend/src/webrtc/config.ts` — rtcConfig, ICE timeouts; `frontend/.env.example` VITE_STUN/TURN_* |
+| 20 | SYS-20 | Implement fallback TURN và tiêu chí chuyển audio-only khi mạng yếu | SYS-19,RT-23,FE-23 | M | Done | 2026-06-14 | Constants: `AUDIO_ONLY_FALLBACK_MIN_BITRATE_BPS/HOLD_DURATION_MS` trong `webrtc/config.ts`; policy trong `04-flow.md`; FE-23 implement UI |
 | 21 | SYS-21 | Implement orchestration E2EE lifecycle (rotate/rekey conflict handling integration) | SYS-06,RT-18,FE-21,API-19 | L | Todo |  | Task thực thi kỹ thuật |
 | 22 | SYS-22 | Implement integration test suite cho WebRTC+E2EE (happy/failure/recovery) | SYS-20,SYS-21,API-28,RT-28,FE-28 | M | Todo |  | Task thực thi kỹ thuật |
 
@@ -178,10 +178,10 @@ Tài liệu này là kế hoạch thực thi chi tiết theo từng thành viên
 | 17 | RT-17 | `key:rotate` routing | RT-16 | S | Done |  | Relay tới peer |
 | 18 | RT-18 | Tie-break khi rotate đồng thời | RT-17,SYS-06 | S | Done |  | `keyRotationStore.ts` — lưu proposalId để reject bên thua |
 | 19 | RT-19 | `key:rekey_required` routing | RT-17 | XS | Done |  | Relay tới sender |
-| 20 | RT-20 | `call:start` + `call:incoming` | RT-04,SYS-07 | S | Todo |  |  |
-| 21 | RT-21 | `call:accept/reject/end` | RT-20 | S | Todo |  |  |
-| 22 | RT-22 | `call:offer/answer/ice` relay | RT-21,FE-25,SYS-19 | M | Todo |  |  |
-| 23 | RT-23 | Timeout + cleanup state call | RT-22,SYS-08 | S | Todo |  |  |
+| 20 | RT-20 | `call:start` + `call:incoming` | RT-04,SYS-07 | S | Done |  | `socket/call.ts` |
+| 21 | RT-21 | `call:accept/reject/end` | RT-20 | S | Done |  | `socket/call.ts` |
+| 22 | RT-22 | `call:offer/answer/ice` relay | RT-21,FE-25,SYS-19 | M | Done |  | `socket/call.ts` — pure signaling relay |
+| 23 | RT-23 | Timeout + cleanup state call | RT-22,SYS-08 | S | Done |  | `callStore.ts` + `startCallCleanupInterval` |
 | 24 | RT-24 | Reconnect resubscription flow | RT-03,RT-23,FE-26 | S | Todo |  |  |
 | 25 | RT-25 | Heartbeat + stale socket cleanup | RT-24 | S | Todo |  |  |
 | 26 | RT-26 | Health endpoint + dependency checks | RT-01 | XS | Done |  | `GET /health` + dependency checks trong `readiness.ts` |
