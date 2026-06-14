@@ -2,6 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import type { UUID, Message, Presence, CallState } from "../types/index.js";
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_BASE_URL || "";
+console.log("[Socket] SOCKET_URL:", SOCKET_URL || "(same origin — relies on nginx /socket.io/ proxy)");
 
 // ── Listener types ────────────────────────────────────────────────────────────
 
@@ -60,8 +61,18 @@ export class SocketManager {
   readonly pendingKeyExchanges: Map<string, PendingKeyExchange> = new Map();
 
   connect(accessToken: string): Promise<void> {
+    // Already connected — nothing to do.
     if (this.socket?.connected) return Promise.resolve();
-    return new Promise((resolve, reject) => {
+
+    // Socket exists but still connecting/reconnecting — wait for it rather than
+    // creating a second socket (which would abandon the first and leak listeners).
+    if (this.socket) {
+      return new Promise<void>((resolve) => {
+        this.socket!.once("connect", resolve);
+      });
+    }
+
+    return new Promise<void>((resolve, reject) => {
       this.socket = io(SOCKET_URL, {
         auth: { accessToken },
         reconnection: true,
@@ -75,17 +86,27 @@ export class SocketManager {
       this.setupEventListeners();
 
       this.socket.on("connect", () => {
-        console.log("[Socket] Connected");
+        console.log("[Socket] Connected to realtime service");
         resolve();
       });
 
       this.socket.on("connect_error", (error) => {
-        console.error("[Socket] Connection error:", error);
-        reject(error);
+        // Log but don't reject — socket.io retries automatically.
+        // We only reject after all attempts are exhausted (reconnect_failed).
+        console.warn("[Socket] Connection error (will retry):", error.message);
+      });
+
+      this.socket.once("reconnect_failed", () => {
+        console.error("[Socket] All reconnection attempts failed");
+        reject(new Error("Cannot connect to realtime service. Please refresh the page."));
       });
 
       this.socket.on("disconnect", (reason) => {
         console.log("[Socket] Disconnected:", reason);
+      });
+
+      this.socket.on("reconnect", (attempt) => {
+        console.log("[Socket] Reconnected after", attempt, "attempt(s)");
       });
     });
   }
@@ -166,16 +187,33 @@ export class SocketManager {
   joinConversation(conversationId: UUID): Promise<UUID> {
     return new Promise((resolve, reject) => {
       const requestId = this.emitEvent("conversation:join", { conversationId });
-      const onAck = (id: UUID) => {
-        if (id !== requestId) return;
+      console.log("[Socket] joinConversation emit, requestId:", requestId, "conv:", conversationId);
+
+      const cleanup = () => {
+        clearTimeout(timer);
         this.listeners.systemAck.delete(onAck);
         this.listeners.systemError.delete(onErr);
+      };
+
+      // 5 s safety valve: if the ack never arrives (dropped packet, server latency),
+      // resolve anyway — the server likely joined us but the ack was lost.
+      // Key exchange will fail independently if we truly aren't in the room.
+      const timer = setTimeout(() => {
+        cleanup();
+        console.warn("[Socket] joinConversation ack timed out — proceeding anyway:", conversationId);
+        resolve(requestId);
+      }, 5000);
+
+      const onAck = (id: UUID) => {
+        if (id !== requestId) return;
+        cleanup();
+        console.log("[Socket] joinConversation ack received:", conversationId);
         resolve(requestId);
       };
       const onErr = (id: UUID, code: string, msg: string) => {
         if (id !== requestId) return;
-        this.listeners.systemAck.delete(onAck);
-        this.listeners.systemError.delete(onErr);
+        cleanup();
+        console.error("[Socket] joinConversation error:", code, msg);
         reject(new Error(`${code}: ${msg}`));
       };
       this.listeners.systemAck.add(onAck);

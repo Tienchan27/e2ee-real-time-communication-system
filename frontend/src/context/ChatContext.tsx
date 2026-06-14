@@ -53,6 +53,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // Respond to a key:exchange:init from a peer. Called from the global listener below.
   const handleIncomingKeyExchangeInit = useCallback(
     async (event: Parameters<Parameters<typeof socketManager.onKeyExchangeInit>[0]>[0]) => {
+      console.log("[KeyExchange] Received init from peer, sessionProposalId:", event.sessionProposalId, "conv:", event.conversationId);
       try {
         // Cross-init tie-break: if we also sent an init for this conversation, both sides
         // would derive different keys. Resolve by comparing sessionProposalIds — the SMALLER
@@ -61,9 +62,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (myPending) {
           if (myPending.sessionProposalId < event.sessionProposalId) {
             // Our init wins — ignore peer's init; wait for peer to respond to ours.
+            console.log("[KeyExchange] Cross-init: our proposal wins, ignoring peer init");
             return;
           }
           // Peer's init wins — cancel ours so the response handler no-ops when it fires.
+          console.log("[KeyExchange] Cross-init: peer proposal wins, cancelling ours");
           socketManager.pendingKeyExchanges.delete(myPending.sessionProposalId);
         }
 
@@ -75,6 +78,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           event.conversationId,
         );
         cryptoManager.setConversationKey(event.conversationId, 1, sharedKey);
+        console.log("[KeyExchange] Derived shared key (as responder), sending response");
 
         const myPublicKeyBase64 = await cryptoManager.exportEcdhPublicKey(keyPair.publicKey);
         socketManager.respondToKeyExchange(
@@ -105,6 +109,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (conversationId: UUID): Promise<void> => {
       return new Promise((resolve, reject) => {
         const sessionProposalId = generateUUID() as UUID;
+        console.log("[KeyExchange] Initiating exchange, sessionProposalId:", sessionProposalId, "conv:", conversationId);
 
         cryptoManager.generateEcdhKeyPair().then(async (keyPair) => {
           const myPublicKeyBase64 = await cryptoManager.exportEcdhPublicKey(keyPair.publicKey);
@@ -119,6 +124,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           let unsubscribe: () => void = () => {};
 
           const timeout = setTimeout(() => {
+            console.warn("[KeyExchange] Timed out waiting for response, sessionProposalId:", sessionProposalId);
             socketManager.pendingKeyExchanges.delete(sessionProposalId);
             unsubscribe(); // prevent orphaned listener from accumulating
             resolve();
@@ -126,6 +132,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
           unsubscribe = socketManager.onKeyExchangeResponse(async (response) => {
             if (response.sessionProposalId !== sessionProposalId) return;
+            console.log("[KeyExchange] Received response for sessionProposalId:", sessionProposalId, "accepted:", response.accepted);
             clearTimeout(timeout);
             unsubscribe();
 
@@ -145,14 +152,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               );
               cryptoManager.setConversationKey(conversationId, 1, sharedKey);
               socketManager.pendingKeyExchanges.delete(sessionProposalId);
+              console.log("[KeyExchange] Derived shared key (as initiator) for conv:", conversationId);
               resolve();
             } catch (err) {
+              console.error("[KeyExchange] Failed to derive key from response:", err);
               socketManager.pendingKeyExchanges.delete(sessionProposalId);
               reject(err);
             }
           });
 
           socketManager.initiateKeyExchange(conversationId, sessionProposalId, myPublicKeyBase64);
+          console.log("[KeyExchange] key:exchange:init emitted");
         });
       });
     },
