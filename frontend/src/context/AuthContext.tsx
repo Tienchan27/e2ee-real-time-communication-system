@@ -46,6 +46,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRefreshToken(storedRefreshToken);
         setUser(JSON.parse(storedUser));
         apiClient.setAccessToken(storedAccessToken);
+        // Reconnect socket when session is restored from localStorage (e.g. page reload).
+        socketManager.connect(storedAccessToken).catch((err) =>
+          console.error("[Auth] Failed to reconnect socket on restore:", err),
+        );
       } catch (err) {
         console.error("Failed to load auth from storage:", err);
         localStorage.removeItem(STORAGE_KEY_ACCESS_TOKEN);

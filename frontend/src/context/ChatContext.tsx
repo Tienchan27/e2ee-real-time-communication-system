@@ -54,6 +54,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const handleIncomingKeyExchangeInit = useCallback(
     async (event: Parameters<Parameters<typeof socketManager.onKeyExchangeInit>[0]>[0]) => {
       try {
+        // Cross-init tie-break: if we also sent an init for this conversation, both sides
+        // would derive different keys. Resolve by comparing sessionProposalIds — the SMALLER
+        // one "wins" (its exchange completes); the other side becomes the responder instead.
+        const myPending = socketManager.getPendingExchangeForConversation(event.conversationId);
+        if (myPending) {
+          if (myPending.sessionProposalId < event.sessionProposalId) {
+            // Our init wins — ignore peer's init; wait for peer to respond to ours.
+            return;
+          }
+          // Peer's init wins — cancel ours so the response handler no-ops when it fires.
+          socketManager.pendingKeyExchanges.delete(myPending.sessionProposalId);
+        }
+
         const peerPublicKey = await cryptoManager.importEcdhPublicKey(event.publicKey);
         const keyPair = await cryptoManager.generateEcdhKeyPair();
         const sharedKey = await cryptoManager.deriveSharedKey(
@@ -75,7 +88,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           const existing = prev.get(event.conversationId);
           if (!existing) return prev;
           const updated = new Map(prev);
-          // Trigger async decrypt; state will update via the promise chain below
           Promise.all(existing.map(decryptMessage)).then((decrypted) => {
             setMessages((p) => new Map(p).set(event.conversationId, decrypted));
           });
@@ -103,13 +115,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             conversationId,
           });
 
+          // Declare unsubscribe before timeout so the timeout callback can call it.
+          let unsubscribe: () => void = () => {};
+
           const timeout = setTimeout(() => {
             socketManager.pendingKeyExchanges.delete(sessionProposalId);
-            // No peer online yet — resolve quietly; they'll respond when they join
+            unsubscribe(); // prevent orphaned listener from accumulating
             resolve();
           }, 8000);
 
-          const unsubscribe = socketManager.onKeyExchangeResponse(async (response) => {
+          unsubscribe = socketManager.onKeyExchangeResponse(async (response) => {
             if (response.sessionProposalId !== sessionProposalId) return;
             clearTimeout(timeout);
             unsubscribe();
