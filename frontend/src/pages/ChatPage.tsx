@@ -25,6 +25,8 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const conversationId = (conversationIdParam as UUID) || currentConversationId;
+  const conversation = conversationId ? conversations.get(conversationId) : null;
+  const conversationMessages = conversationId ? messages.get(conversationId) || [] : [];
 
   useEffect(() => {
     if (!conversationId) {
@@ -40,9 +42,6 @@ export function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
-
-  const conversation = conversationId ? conversations.get(conversationId) : null;
-  const conversationMessages = conversationId ? messages.get(conversationId) || [] : [];
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
