@@ -5,22 +5,59 @@ export type ConversationAccessService = {
 };
 
 type MembershipResponse = {
-  data?: { member?: boolean };
+  success?: boolean;
+  data?: {
+    member?: boolean;
+    isMember?: boolean;
+    allowed?: boolean;
+  };
 };
 
 export function createConversationAccessService(config: AppConfig): ConversationAccessService {
   return {
     async canJoinConversation(userId, conversationId) {
-      const url = `${config.apiInternalBaseUrl}/api/v1/internal/conversations/${conversationId}/members/${userId}`;
+      const baseUrl = config.apiInternalBaseUrl.replace(/\/+$/, "");
+
+      const url = `${baseUrl}/internal/conversations/${conversationId}/members/${userId}`;
+
       try {
-        const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${config.apiInternalToken}` },
+        console.log("[conversationAccess] checking membership", {
+          userId,
+          conversationId,
+          url,
         });
-        if (!response.ok) return false;
-        const body = (await response.json()) as MembershipResponse;
-        return body.data?.member === true;
+
+        const response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${config.apiInternalToken}`,
+          },
+        });
+
+        const text = await response.text();
+
+        console.log("[conversationAccess] response", {
+          status: response.status,
+          ok: response.ok,
+          body: text,
+        });
+
+        if (!response.ok) {
+          return false;
+        }
+
+        const body = JSON.parse(text) as MembershipResponse;
+
+        return (
+          body.data?.member === true ||
+          body.data?.isMember === true ||
+          body.data?.allowed === true
+        );
       } catch (err) {
-        console.error(`conversationAccess: membership check failed userId=${userId} conversationId=${conversationId}`, err);
+        console.error(
+          `conversationAccess: membership check failed userId=${userId} conversationId=${conversationId}`,
+          err,
+        );
+
         return false;
       }
     },
