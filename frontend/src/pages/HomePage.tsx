@@ -45,6 +45,9 @@ export function HomePage() {
         user.userId,
       );
 
+      // Sync conversations map so ChatPage can find this conversation immediately
+      await loadConversations();
+
       // Subscribe to this user's presence
       await subscribeToPresence([user.userId]);
 

@@ -40,13 +40,18 @@ router.post("/direct", authRequired, async (req, res) => {
 
   try {
     await client.query("BEGIN");
-    const conversationResult = await client.query<{ id: string; type: string }>(
+    const conversationResult = await client.query<{
+      id: string;
+      type: string;
+      created_at: Date;
+      updated_at: Date;
+    }>(
       `
         INSERT INTO conversations (type, direct_pair_key)
         VALUES ('DIRECT', $1)
         ON CONFLICT (direct_pair_key) WHERE direct_pair_key IS NOT NULL
         DO UPDATE SET direct_pair_key = EXCLUDED.direct_pair_key
-        RETURNING id, type
+        RETURNING id, type, created_at, updated_at
       `,
       [pairKey],
     );
@@ -61,9 +66,10 @@ router.post("/direct", authRequired, async (req, res) => {
       [conversation.id, userId, peerUserId],
     );
 
-    const membersResult = await client.query<MemberRow>(
+    const membersResult = await client.query<MemberRow & { joined_at: Date }>(
       `
-        SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url
+        SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
+               cm.created_at AS joined_at
         FROM conversation_members cm
         JOIN users u ON u.id = cm.user_id
         WHERE cm.conversation_id = $1
@@ -76,7 +82,13 @@ router.post("/direct", authRequired, async (req, res) => {
     return ok(res, {
       conversationId: conversation.id,
       type: conversation.type,
-      members: membersResult.rows.map(mapMember),
+      members: membersResult.rows.map((row) => ({
+        ...mapMember(row),
+        joinedAt: row.joined_at.toISOString(),
+      })),
+      unreadCount: 0,
+      createdAt: conversation.created_at.toISOString(),
+      updatedAt: conversation.updated_at.toISOString(),
     });
   } catch {
     await client.query("ROLLBACK");
