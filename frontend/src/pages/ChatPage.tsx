@@ -14,6 +14,7 @@ export function ChatPage() {
     messages,
     currentConversationId,
     setCurrentConversationId,
+    loadConversations,
     loadMessages,
     sendMessage,
     presences,
@@ -35,6 +36,12 @@ export function ChatPage() {
     }
 
     setCurrentConversationId(conversationId);
+
+    // If conversation metadata not in cache (e.g. after page reload), fetch it first
+    if (!conversations.get(conversationId)) {
+      loadConversations();
+    }
+
     loadMessages(conversationId);
   }, [conversationId]);
 
