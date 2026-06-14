@@ -119,14 +119,14 @@ Tài liệu này gom lại toàn bộ task từ `10-roadmap.md` theo chức năn
 
 | Task ID | Task | Owner | Phụ thuộc | Ước lượng | Trạng thái | Deadline | Ghi chú |
 |---|---|---|---|---|---|---|---|
-| SYS-07 | Chốt call state machine voice/video | System Owner | SYS-02,RT-20,FE-25 | S | Todo |  |  |
-| SYS-08 | Chốt TURN fallback policy | System Owner | SYS-07,RT-22 | XS | Todo |  |  |
-| SYS-19 | Implement cấu hình runtime WebRTC (iceServers, timeout, retry policy) | System Owner | SYS-08,RT-22,FE-25 | M | Todo |  |  |
-| SYS-20 | Implement fallback TURN và tiêu chí chuyển audio-only khi mạng yếu | System Owner | SYS-19,RT-23,FE-23 | M | Todo |  |  |
-| RT-20 | `call:start` + `call:incoming` | Realtime Owner | RT-04,SYS-07 | S | Todo |  |  |
-| RT-21 | `call:accept/reject/end` | Realtime Owner | RT-20 | S | Todo |  |  |
-| RT-22 | `call:offer/answer/ice` relay | Realtime Owner | RT-21,FE-25,SYS-19 | M | Todo |  |  |
-| RT-23 | Timeout + cleanup state call | Realtime Owner | RT-22,SYS-08 | S | Todo |  |  |
+| SYS-07 | Chốt call state machine voice/video | System Owner | SYS-02,RT-20,FE-25 | S | Done | 2026-06-14 | State machine + edge cases trong `04-flow.md` |
+| SYS-08 | Chốt TURN fallback policy | System Owner | SYS-07,RT-22 | XS | Done | 2026-06-14 | TURN fallback policy trong `04-flow.md` |
+| SYS-19 | Implement cấu hình runtime WebRTC (iceServers, timeout, retry policy) | System Owner | SYS-08,RT-22,FE-25 | M | Done | 2026-06-14 | `frontend/src/webrtc/config.ts`; `frontend/.env.example` VITE_STUN/TURN_* |
+| SYS-20 | Implement fallback TURN và tiêu chí chuyển audio-only khi mạng yếu | System Owner | SYS-19,RT-23,FE-23 | M | Done | 2026-06-14 | Constants `AUDIO_ONLY_FALLBACK_*` trong `webrtc/config.ts`; policy trong `04-flow.md`; FE impl là FE-23 |
+| RT-20 | `call:start` + `call:incoming` | Realtime Owner | RT-04,SYS-07 | S | Done |  | `realtime-service/src/socket/call.ts` |
+| RT-21 | `call:accept/reject/end` | Realtime Owner | RT-20 | S | Done |  | `realtime-service/src/socket/call.ts` |
+| RT-22 | `call:offer/answer/ice` relay | Realtime Owner | RT-21,FE-25,SYS-19 | M | Done |  | `realtime-service/src/socket/call.ts` |
+| RT-23 | Timeout + cleanup state call | Realtime Owner | RT-22,SYS-08 | S | Done |  | `callStore.ts` — timeout + cleanup |
 | FE-22 | Incoming call modal | FE Owner | FE-03,RT-20 | S | Todo |  |  |
 | FE-23 | Voice call UI + mute/unmute | FE Owner | FE-22,SYS-07 | M | Todo |  |  |
 | FE-24 | Video call UI + camera on/off | FE Owner | FE-22,SYS-07 | M | Todo |  |  |
