@@ -60,6 +60,7 @@ export class SocketManager {
   readonly pendingKeyExchanges: Map<string, PendingKeyExchange> = new Map();
 
   connect(accessToken: string): Promise<void> {
+    if (this.socket?.connected) return Promise.resolve();
     return new Promise((resolve, reject) => {
       this.socket = io(SOCKET_URL, {
         auth: { accessToken },
@@ -69,9 +70,12 @@ export class SocketManager {
         reconnectionAttempts: 5,
       });
 
+      // Register socket-level handlers once, immediately after io() so they survive reconnects
+      // without accumulating duplicates on each "connect" event.
+      this.setupEventListeners();
+
       this.socket.on("connect", () => {
         console.log("[Socket] Connected");
-        this.setupEventListeners();
         resolve();
       });
 
@@ -296,6 +300,15 @@ export class SocketManager {
   onKeyExchangeResponse(listener: KeyExchangeResponseListener): () => void {
     this.listeners.keyExchangeResponse.add(listener);
     return () => this.listeners.keyExchangeResponse.delete(listener);
+  }
+
+  getPendingExchangeForConversation(conversationId: UUID): { sessionProposalId: UUID } | null {
+    for (const [sessionProposalId, pending] of this.pendingKeyExchanges) {
+      if (pending.conversationId === conversationId) {
+        return { sessionProposalId: sessionProposalId as UUID };
+      }
+    }
+    return null;
   }
 
   // ── Presence / call listener registration ────────────────────────────────
