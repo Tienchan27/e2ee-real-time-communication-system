@@ -45,11 +45,11 @@ function errorCheck(name: string, required: boolean, message: string): Dependenc
 }
 
 async function checkInternalApi(config: AppConfig): Promise<DependencyCheck> {
-  if (config.allowDevMessagePersist) {
-    // Local dev dang fake persist, nen API internal chua bat buoc de test realtime.
+  if (config.allowDevConversationAccess && config.allowDevMessagePersist) {
+    // Local dev dang fake membership + persist, nen API internal chua bat buoc de test realtime.
     return skippedCheck(
       "api-internal",
-      "Skipped in local dev because message persist is using a dev fallback.",
+      "Skipped in local dev because conversation access and message persist are using dev fallbacks.",
     );
   }
 

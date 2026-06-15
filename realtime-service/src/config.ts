@@ -6,6 +6,7 @@ export type AppConfig = {
   apiInternalBaseUrl: string;
   apiInternalToken: string;
   allowDevSocketAuth: boolean;
+  allowDevConversationAccess: boolean;
   allowDevMessagePersist: boolean;
   callInviteTimeoutMs: number;
   staleCleanupIntervalMs: number;
@@ -36,6 +37,9 @@ export function loadConfig(): AppConfig {
     apiInternalToken: process.env.API_INTERNAL_TOKEN || "",
     // Cho phep dung token dev khi API login/JWT chua hoan thien.
     allowDevSocketAuth: nodeEnv !== "production",
+    // Tam thoi cho phep join conversation o local khi API membership chua co.
+    allowDevConversationAccess:
+      nodeEnv !== "production" && process.env.ALLOW_DEV_CONVERSATION_ACCESS === "true",
     // Tam thoi fake persist o local khi API-19 chua co endpoint internal persist.
     allowDevMessagePersist: nodeEnv !== "production" && process.env.ALLOW_DEV_MESSAGE_PERSIST === "true",
     callInviteTimeoutMs: Number(process.env.CALL_INVITE_TIMEOUT_MS || 30_000),
