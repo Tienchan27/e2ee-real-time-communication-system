@@ -16,17 +16,16 @@ type MembershipResponse = {
 export function createConversationAccessService(config: AppConfig): ConversationAccessService {
   return {
     async canJoinConversation(userId, conversationId) {
+      if (config.allowDevConversationAccess) {
+        // Local dev bypass giup test RT-24/RT-28 khi API membership chua san sang.
+        return true;
+      }
+
       const baseUrl = config.apiInternalBaseUrl.replace(/\/+$/, "");
 
       const url = `${baseUrl}/internal/conversations/${conversationId}/members/${userId}`;
 
       try {
-        console.log("[conversationAccess] checking membership", {
-          userId,
-          conversationId,
-          url,
-        });
-
         const response = await fetch(url, {
           headers: {
             Authorization: `Bearer ${config.apiInternalToken}`,
@@ -34,12 +33,6 @@ export function createConversationAccessService(config: AppConfig): Conversation
         });
 
         const text = await response.text();
-
-        console.log("[conversationAccess] response", {
-          status: response.status,
-          ok: response.ok,
-          body: text,
-        });
 
         if (!response.ok) {
           return false;
