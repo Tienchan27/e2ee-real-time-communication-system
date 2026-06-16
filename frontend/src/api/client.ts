@@ -7,6 +7,7 @@ import type {
   DeviceInfo,
   Conversation,
   UserSearchResult,
+  CallLog,
 } from "../types/index.js";
 
 const API_BASE_URL =
@@ -21,8 +22,9 @@ export class ApiError extends Error {
     statusCode: number,
     errorCode: string,
     requestId?: string,
+    errorMessage?: string,
   ) {
-    super(`API Error: ${errorCode}`);
+    super(errorMessage || `API Error: ${errorCode}`);
     this.name = "ApiError";
     this.statusCode = statusCode;
     this.errorCode = errorCode;
@@ -59,7 +61,6 @@ export class ApiClient {
 
     const response = await fetch(url, { ...options, headers });
 
-    // Silent token refresh on 401 — retry original request once with the new token
     if (response.status === 401 && this.refreshHandler && !this.isRefreshing) {
       this.isRefreshing = true;
       try {
@@ -73,6 +74,7 @@ export class ApiClient {
             retryResponse.status,
             retryData.error?.code || "UNKNOWN_ERROR",
             retryData.error?.requestId,
+            retryData.error?.message,
           );
         }
         return retryData.data as T;
@@ -88,13 +90,13 @@ export class ApiClient {
         response.status,
         data.error?.code || "UNKNOWN_ERROR",
         data.error?.requestId,
+        data.error?.message,
       );
     }
 
     return data.data as T;
   }
 
-  // Auth endpoints
   async requestOtp(
     email: string,
     username: string,
@@ -158,7 +160,6 @@ export class ApiClient {
     );
   }
 
-  // User endpoints
   async searchUsers(
     query: string,
     limit: number = 20,
@@ -179,7 +180,6 @@ export class ApiClient {
     }>(`/users/search?${params.toString()}`);
   }
 
-  // Conversation endpoints
   async getOrCreateDirectConversation(
     peerUserId: UUID,
   ): Promise<Conversation> {
@@ -213,18 +213,17 @@ export class ApiClient {
     );
   }
 
-  // Message endpoints
   async getMessages(
     conversationId: UUID,
     limit: number = 50,
-    cursor?: string,
+    beforeMessageId?: string,
   ): Promise<{
     messages: Message[];
     nextCursor?: string;
   }> {
     const params = new URLSearchParams({
       limit: limit.toString(),
-      ...(cursor && { cursor }),
+      ...(beforeMessageId && { beforeMessageId }),
     });
 
     return this.request<{
@@ -232,9 +231,69 @@ export class ApiClient {
       nextCursor?: string;
     }>(`/conversations/${conversationId}/messages?${params.toString()}`);
   }
+
+  async getCalls(
+    conversationId: UUID,
+    limit: number = 50,
+    beforeCallId?: string,
+  ): Promise<{
+    calls: CallLog[];
+    nextCursor?: string;
+  }> {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      ...(beforeCallId && { beforeCallId }),
+    });
+
+    return this.request<{
+      calls: CallLog[];
+      nextCursor?: string;
+    }>(`/conversations/${conversationId}/calls?${params.toString()}`);
+  }
+
+  async markMessageDelivered(messageId: UUID, deliveredAt: string): Promise<{ updated: boolean }> {
+    return this.request<{ updated: boolean }>(`/messages/${messageId}/delivered`, {
+      method: "POST",
+      body: JSON.stringify({ deliveredAt }),
+    });
+  }
+
+  async markConversationRead(
+    conversationId: UUID,
+    lastReadMessageId: UUID,
+    readAt: string,
+  ): Promise<{ lastReadMessageId: UUID; updatedCount: number }> {
+    return this.request<{ lastReadMessageId: UUID; updatedCount: number }>(
+      `/conversations/${conversationId}/read`,
+      {
+        method: "POST",
+        body: JSON.stringify({ lastReadMessageId, readAt }),
+      },
+    );
+  }
+
+  async putDeviceEcdhPublicKey(publicKey: string): Promise<{ userId: UUID; deviceId: UUID }> {
+    return this.request<{ userId: UUID; deviceId: UUID }>("/devices/me/ecdh-public-key", {
+      method: "PUT",
+      body: JSON.stringify({ publicKey }),
+    });
+  }
+
+  async getUserEcdhPublicKey(userId: UUID): Promise<{
+    userId: UUID;
+    deviceId: UUID;
+    publicKey: string;
+    updatedAt: string;
+  }> {
+    return this.request<{
+      userId: UUID;
+      deviceId: UUID;
+      publicKey: string;
+      updatedAt: string;
+    }>(`/users/${userId}/ecdh-public-key`);
+  }
 }
 
 export const apiClient = new ApiClient();
 
-// Import after definition to avoid circular dependency
 import type { Message } from "../types/index.js";
