@@ -1,14 +1,14 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.js";
 import "./AuthPages.css";
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register, isLoading, error: authError } = useAuth();
+  const { register, verifyOtp, isLoading, error: authError } = useAuth();
   const [step, setStep] = useState<"register" | "otp">("register");
   const [otpRequestId, setOtpRequestId] = useState("");
-  const [expiresInSec, setExpiresInSec] = useState(0);
+  const [countdown, setCountdown] = useState(0);
 
   // Register form
   const [email, setEmail] = useState("");
@@ -20,7 +20,12 @@ export function RegisterPage() {
   // OTP form
   const [otpCode, setOtpCode] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
-  const { verifyOtp } = useAuth();
+
+  useEffect(() => {
+    if (step !== "otp" || countdown <= 0) return;
+    const id = setInterval(() => setCountdown((c) => c - 1), 1000);
+    return () => clearInterval(id);
+  }, [step, countdown]);
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +39,7 @@ export function RegisterPage() {
     try {
       const response = await register(email, username, password, displayName);
       setOtpRequestId(response.otpRequestId);
-      setExpiresInSec(response.expiresInSec);
+      setCountdown(response.expiresInSec);
       setStep("otp");
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Registration failed";
@@ -81,7 +86,7 @@ export function RegisterPage() {
                 maxLength={6}
                 disabled={verifyLoading}
               />
-              <small>OTP expires in {expiresInSec} seconds</small>
+              <small>{countdown > 0 ? `OTP expires in ${countdown}s` : "OTP expired"}</small>
             </div>
             {(error || authError) && (
               <div className="error-message">{error || authError}</div>
