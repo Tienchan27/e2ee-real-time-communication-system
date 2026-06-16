@@ -21,7 +21,7 @@ export function HomePage() {
 
   useEffect(() => {
     loadConversations();
-  }, []);
+  }, [loadConversations]);
 
   const handleSearch = async (query: string) => {
     if (query.trim().length < 2) {
@@ -39,16 +39,16 @@ export function HomePage() {
   };
 
   const handleSelectUser = async (user: UserSearchResult) => {
+    setSearchQuery("");
+    setSearchResults([]);
     try {
       const { apiClient } = await import("../api/client.js");
       const conversation = await apiClient.getOrCreateDirectConversation(
         user.userId,
       );
 
-      // Sync conversations map so ChatPage can find this conversation immediately
       await loadConversations();
 
-      // Subscribe to this user's presence
       await subscribeToPresence([user.userId]);
 
       setCurrentConversationId(conversation.conversationId);
@@ -59,7 +59,6 @@ export function HomePage() {
   };
 
   const handleConversationClick = async (conversationId: UUID) => {
-    // Subscribe to all members in conversation
     const conversation = conversations.get(conversationId);
     if (conversation) {
       await subscribeToPresence(
@@ -170,7 +169,7 @@ export function HomePage() {
                   <div className="conversation-name">{displayName}</div>
                   {conversation.lastMessagePreview && (
                     <div className="conversation-preview">
-                      {conversation.lastMessagePreview.preview}
+                      {conversation.lastMessagePreview.preview ?? "Tin nhắn được mã hoá"}
                     </div>
                   )}
                 </div>

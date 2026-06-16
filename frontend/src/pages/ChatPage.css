@@ -70,6 +70,69 @@
   color: #e65100;
 }
 
+.chat-call-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.call-header-btn {
+  background: #f0f0f0;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.call-header-btn:hover {
+  background: #e8eaf6;
+}
+
+.call-history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  align-self: center;
+  background: #f5f5f5;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  max-width: 90%;
+}
+
+.call-history-icon {
+  font-size: 1.25rem;
+}
+
+.call-history-body {
+  flex: 1;
+}
+
+.call-history-title {
+  font-weight: 600;
+  color: #444;
+  font-size: 0.9rem;
+}
+
+.call-history-sub {
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.call-callback-btn {
+  border: 1px solid #667eea;
+  background: #fff;
+  color: #667eea;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.call-callback-btn:hover {
+  background: #eef0ff;
+}
+
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -167,6 +230,12 @@
   font-size: 0.75rem;
   color: #999;
   padding: 0 0.5rem;
+}
+
+.message-encrypted-placeholder {
+  font-style: italic;
+  color: #aaa;
+  font-size: 0.85rem;
 }
 
 .message-status {
