@@ -105,4 +105,49 @@ router.get("/:userId/ecdh-public-key", authRequired, async (req, res) => {
   });
 });
 
+// Plural: all device prekeys for a user (multi-device fan-out). Deduped by public key.
+router.get("/:userId/ecdh-public-keys", authRequired, async (req, res) => {
+  const { userId } = req.params;
+  if (!isUuid(userId)) {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid userId");
+  }
+
+  const userExists = await pool.query<{ id: string }>(
+    "SELECT id FROM users WHERE id = $1",
+    [userId],
+  );
+  if (userExists.rowCount === 0) {
+    return fail(res, 404, "USER_NOT_FOUND", "User not found");
+  }
+
+  const result = await pool.query<{
+    device_id: string;
+    public_key_spki: string;
+    updated_at: Date;
+  }>(
+    `
+      SELECT device_id, public_key_spki, updated_at
+      FROM device_ecdh_public_keys
+      WHERE user_id = $1
+      ORDER BY updated_at DESC
+      LIMIT 20
+    `,
+    [userId],
+  );
+
+  const seen = new Set<string>();
+  const keys = [];
+  for (const row of result.rows) {
+    if (seen.has(row.public_key_spki)) continue;
+    seen.add(row.public_key_spki);
+    keys.push({
+      deviceId: row.device_id,
+      publicKey: row.public_key_spki,
+      updatedAt: row.updated_at.toISOString(),
+    });
+  }
+
+  return ok(res, { userId, keys });
+});
+
 export const usersRouter = router;

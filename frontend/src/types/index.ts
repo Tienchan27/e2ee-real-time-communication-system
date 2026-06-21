@@ -94,10 +94,19 @@ export interface MessageEnvelope {
   clientMessageSeq: number;
 }
 
+export type WrappedKeyEntry = {
+  deviceId: UUID;
+  nonce: string;
+  ciphertext: string;
+};
+
 export type E2eeSetupAad = {
-  e2eeSetup: "g-lite-v1";
+  e2eeSetup: "g-lite-v1" | "g-lite-v2";
   senderEphemeralPublicKey: string;
   senderDeviceId: UUID;
+  // v2 fan-out: conversation key K wrapped to each recipient/self device prekey.
+  // Absent on legacy v1 (direct-ECDH derivation).
+  wrappedKeys?: WrappedKeyEntry[];
 };
 
 export interface Message {

@@ -21,7 +21,7 @@ ENV VITE_TURN_URL=$VITE_TURN_URL
 ENV VITE_TURN_USERNAME=$VITE_TURN_USERNAME
 ENV VITE_TURN_CREDENTIAL=$VITE_TURN_CREDENTIAL
 COPY package.json package-lock.json ./
-RUN npm ci --include=optional
+RUN rm -f package-lock.json && npm install --include=optional
 COPY . .
 RUN npm run build
 

@@ -1,4 +1,4 @@
-import type { E2eeSetupAad, Message, UUID } from "../types/index.js";
+import type { E2eeSetupAad, Message, UUID, WrappedKeyEntry } from "../types/index.js";
 import { ApiError, apiClient } from "../api/client.js";
 import { cryptoManager } from "./manager.js";
 import { getDevicePrivateKey } from "./deviceKey.js";
@@ -35,7 +35,7 @@ function readStoredConversationKey(conversationId: string, keyVersion: number): 
 export function isE2eeSetupAad(aad: Record<string, unknown> | undefined): aad is E2eeSetupAad {
   return (
     aad !== undefined &&
-    aad.e2eeSetup === "g-lite-v1" &&
+    (aad.e2eeSetup === "g-lite-v1" || aad.e2eeSetup === "g-lite-v2") &&
     typeof aad.senderEphemeralPublicKey === "string" &&
     typeof aad.senderDeviceId === "string"
   );
@@ -96,84 +96,104 @@ export async function loadConversationKey(
   }
 }
 
-export type DeriveOptions = { force?: boolean };
+export type DeriveOptions = { setPrimary?: boolean };
 
-export async function tryDeriveFromSetupAad(
+// Additive, non-destructive: derive the conversation key carried by a setup aad and
+// register it as a candidate (and optionally the primary). Supports g-lite-v2 fan-out
+// (unwrap K from the entry wrapped to this device) and legacy g-lite-v1 (direct ECDH).
+export async function deriveKeyFromSetupAad(
   conversationId: UUID,
   aad: Record<string, unknown> | undefined,
   options: DeriveOptions = {},
 ): Promise<boolean> {
   if (!isE2eeSetupAad(aad)) return false;
-  if (!options.force && cryptoManager.hasConversationKey(conversationId)) return true;
 
   const devicePrivate = await getDevicePrivateKey();
   if (!devicePrivate) return false;
 
+  let wrappingKey: CryptoKey;
   try {
     const ephemeralPublic = await cryptoManager.importEcdhPublicKey(aad.senderEphemeralPublicKey);
-    const sharedKey = await cryptoManager.deriveSharedKey(
-      devicePrivate,
-      ephemeralPublic,
-      conversationId,
-    );
-    cryptoManager.setConversationKey(conversationId, 1, sharedKey);
-    await saveConversationKey(conversationId, 1, sharedKey);
-    return true;
+    wrappingKey = await cryptoManager.deriveSharedKey(devicePrivate, ephemeralPublic, conversationId);
   } catch (err) {
-    console.error("G-lite derive from setup aad failed:", err);
+    console.error("G-lite shared-key derivation failed:", err);
     return false;
   }
+
+  let conversationKey: CryptoKey | null = null;
+  if (aad.wrappedKeys && aad.wrappedKeys.length > 0) {
+    // v2: the ECDH result wraps a random K. Trial-unwrap each entry; only the one
+    // wrapped to this device's prekey decrypts.
+    for (const entry of aad.wrappedKeys) {
+      try {
+        conversationKey = await cryptoManager.unwrapKey(wrappingKey, entry.nonce, entry.ciphertext);
+        break;
+      } catch {
+        // not wrapped for this device — try next entry
+      }
+    }
+    if (!conversationKey) return false;
+  } else {
+    // v1 legacy: the ECDH-derived key IS the conversation key.
+    conversationKey = wrappingKey;
+  }
+
+  await cryptoManager.addCandidateKey(conversationId, conversationKey);
+  if (options.setPrimary || !cryptoManager.hasConversationKey(conversationId)) {
+    cryptoManager.setConversationKey(conversationId, 1, conversationKey);
+    await saveConversationKey(conversationId, 1, conversationKey);
+  }
+  return true;
 }
 
 async function trialDecryptMessage(message: Message): Promise<boolean> {
   const { conversationId, envelope } = message;
-  const keyVersion = envelope.keyVersion;
-  const key = cryptoManager.getConversationKey(conversationId, keyVersion);
-  if (!key) return false;
-  try {
-    await cryptoManager.decrypt(
-      conversationId,
-      envelope.ciphertext,
-      envelope.nonce,
-      keyVersion,
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  const result = await cryptoManager.tryDecryptWithCandidates(
+    conversationId,
+    envelope.ciphertext,
+    envelope.nonce,
+  );
+  return result !== null;
 }
 
+// Rebuild the candidate key set for a conversation from local storage + every setup
+// aad in history. Non-destructive: never clears a working key. The primary (used to
+// encrypt new messages) converges on the canonical key = the earliest setup aad, which
+// both peers can reproduce, so future sends stop diverging.
 export async function ensureKeyFromGliteHistory(
   conversationId: UUID,
   messages: Message[],
 ): Promise<boolean> {
-  const setupAad = findGliteSetupAad(messages);
-  if (!setupAad) return false;
+  const earliestAad = findGliteSetupAad(messages);
+  if (!earliestAad) return false;
+  const earliestMessage = messages.find((m) => isE2eeSetupAad(m.envelope.aad));
 
-  const setupMessage = messages.find((m) => isE2eeSetupAad(m.envelope.aad));
-  const trialTarget = setupMessage ?? messages.find((m) => m.envelope.keyVersion === 1);
-
-  // 1. Uu tien khoa hien co (da luu luc gui / nhan truoc do). KHONG pha khoa dang dung duoc:
-  //    nguoi GUI khong the re-derive tu setupAad cua chinh minh (ECDH bang device key cua minh
-  //    + ephemeral cua minh -> ra khoa rac, khac shared secret).
+  // 1. Own stored key (the sender minted + persisted it). Never wiped.
   await loadConversationKey(conversationId, 1);
-  if (cryptoManager.hasConversationKey(conversationId)) {
-    if (!trialTarget || (await trialDecryptMessage(trialTarget))) {
-      return true;
+
+  // 2. Ensure primary == canonical key (earliest setup). Keep the stored key if it
+  //    already decrypts the earliest setup message; otherwise derive from that aad.
+  const primaryDecryptsEarliest =
+    cryptoManager.hasConversationKey(conversationId) &&
+    earliestMessage !== undefined &&
+    (await trialDecryptMessage(earliestMessage));
+  if (!primaryDecryptsEarliest) {
+    await deriveKeyFromSetupAad(conversationId, earliestAad, { setPrimary: true });
+  }
+
+  // 3. Register every other setup aad's key as a candidate (covers glare where each
+  //    peer minted a different key, and multi-device fan-out copies).
+  for (const m of messages) {
+    const aad = m.envelope.aad;
+    if (isE2eeSetupAad(aad) && aad !== earliestAad) {
+      await deriveKeyFromSetupAad(conversationId, aad, { setPrimary: false });
     }
   }
 
-  // 2. Chua co khoa / khoa sai -> derive tu setupAad (case nguoi NHAN). Chi commit khi giai ma duoc.
-  clearConversationKey(conversationId, 1);
-  const derived = await tryDeriveFromSetupAad(conversationId, setupAad, { force: true });
-  if (!derived) return false;
-  if (!trialTarget) return true;
-
-  if (await trialDecryptMessage(trialTarget)) {
-    return true;
-  }
-  clearConversationKey(conversationId, 1);
-  return false;
+  return (
+    cryptoManager.hasConversationKey(conversationId) ||
+    cryptoManager.getCandidateKeys(conversationId).length > 0
+  );
 }
 
 export type EnsureKeyResult = {
@@ -190,9 +210,17 @@ export async function ensureKeyForSend(
     return {};
   }
 
-  let peerKey: { publicKey: string; deviceId: UUID };
+  const selfUserId = requireActiveCryptoUserId();
+
+  // Fan-out: fetch every device prekey of the peer AND of self, so any context of
+  // either participant can later unwrap the conversation key.
+  let peerKeys: { deviceId: UUID; publicKey: string }[];
+  let selfKeys: { deviceId: UUID; publicKey: string }[];
   try {
-    peerKey = await apiClient.getUserEcdhPublicKey(peerUserId);
+    [peerKeys, selfKeys] = await Promise.all([
+      apiClient.getUserEcdhPublicKeys(peerUserId),
+      apiClient.getUserEcdhPublicKeys(selfUserId),
+    ]);
   } catch (err) {
     if (
       err instanceof ApiError &&
@@ -204,58 +232,73 @@ export async function ensureKeyForSend(
     throw err;
   }
 
+  if (peerKeys.length === 0) {
+    // Peer has never registered a prekey — fall back to socket key exchange.
+    throw new PeerPrekeyMissingError();
+  }
+
+  // Dedupe by public key (a context that logged in repeatedly registers duplicates).
+  const byPublicKey = new Map<string, { deviceId: UUID; publicKey: string }>();
+  for (const k of [...peerKeys, ...selfKeys]) {
+    if (!byPublicKey.has(k.publicKey)) byPublicKey.set(k.publicKey, k);
+  }
+
+  const conversationKey = await cryptoManager.generateConversationKey();
+  const rawKey = await cryptoManager.exportRawKey(conversationKey);
   const ephemeral = await cryptoManager.generateEcdhKeyPair();
-  const peerPublic = await cryptoManager.importEcdhPublicKey(peerKey.publicKey);
-  const sharedKey = await cryptoManager.deriveSharedKey(
-    ephemeral.privateKey,
-    peerPublic,
-    conversationId,
-  );
-  cryptoManager.setConversationKey(conversationId, 1, sharedKey);
-  await saveConversationKey(conversationId, 1, sharedKey);
+
+  const wrappedKeys: WrappedKeyEntry[] = [];
+  for (const prekey of byPublicKey.values()) {
+    try {
+      const prekeyPublic = await cryptoManager.importEcdhPublicKey(prekey.publicKey);
+      const wrappingKey = await cryptoManager.deriveSharedKey(
+        ephemeral.privateKey,
+        prekeyPublic,
+        conversationId,
+      );
+      const { nonce, ciphertext } = await cryptoManager.wrapKey(wrappingKey, rawKey);
+      wrappedKeys.push({ deviceId: prekey.deviceId, nonce, ciphertext });
+    } catch (err) {
+      console.error("Failed to wrap conversation key for a device prekey:", err);
+    }
+  }
+
+  if (wrappedKeys.length === 0) {
+    throw new PeerPrekeyMissingError();
+  }
+
+  cryptoManager.setConversationKey(conversationId, 1, conversationKey);
+  await saveConversationKey(conversationId, 1, conversationKey);
 
   const senderEphemeralPublicKey = await cryptoManager.exportEcdhPublicKey(ephemeral.publicKey);
   return {
     setupAad: {
-      e2eeSetup: "g-lite-v1",
+      e2eeSetup: "g-lite-v2",
       senderEphemeralPublicKey,
       senderDeviceId,
+      wrappedKeys,
     },
   };
 }
 
-async function attemptDecrypt(message: Message): Promise<Message | null> {
-  const { conversationId, envelope } = message;
-  const keyVersion = envelope.keyVersion;
-  const key = cryptoManager.getConversationKey(conversationId, keyVersion);
-  if (!key) return null;
-  try {
-    const plaintext = await cryptoManager.decrypt(
-      conversationId,
-      envelope.ciphertext,
-      envelope.nonce,
-      keyVersion,
-    );
-    return { ...message, plaintext };
-  } catch {
-    return null;
-  }
-}
-
 export async function decryptMessage(message: Message): Promise<Message> {
   const { conversationId, envelope } = message;
-  const keyVersion = envelope.keyVersion;
 
-  if (!cryptoManager.getConversationKey(conversationId, keyVersion)) {
-    await loadConversationKey(conversationId, keyVersion);
+  // If this message carries a setup aad, register its key as a candidate first.
+  if (isE2eeSetupAad(envelope.aad)) {
+    await deriveKeyFromSetupAad(conversationId, envelope.aad, { setPrimary: false });
+  } else if (cryptoManager.getCandidateKeys(conversationId).length === 0) {
+    await loadConversationKey(conversationId, envelope.keyVersion);
   }
-  if (!cryptoManager.getConversationKey(conversationId, keyVersion)) {
-    await tryDeriveFromSetupAad(conversationId, envelope.aad);
+
+  const plaintext = await cryptoManager.tryDecryptWithCandidates(
+    conversationId,
+    envelope.ciphertext,
+    envelope.nonce,
+  );
+  if (plaintext !== null) {
+    return { ...message, plaintext };
   }
-
-  const decrypted = await attemptDecrypt(message);
-  if (decrypted) return decrypted;
-
   return message;
 }
 

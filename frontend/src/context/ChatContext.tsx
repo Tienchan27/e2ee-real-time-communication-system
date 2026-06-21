@@ -13,7 +13,6 @@ import type {
 import { socketManager } from "../socket/manager.js";
 import { cryptoManager } from "../crypto/manager.js";
 import {
-  clearConversationKey,
   decryptMessage as decryptMessageWithKeys,
   ensureKeyForSend,
   ensureKeyFromGliteHistory,
@@ -617,7 +616,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (gliteKeyOk) {
           markGliteConversation(conversationId);
         } else if (hasGlite) {
-          clearConversationKey(conversationId, 1);
+          // History has G-lite setup but no key yet (e.g. this device wasn't a fan-out
+          // target). Mark it G-lite but never wipe a working key — keys are additive.
           markGliteConversation(conversationId);
         } else if (!hasConversationKey(conversationId)) {
           await loadConversationKey(conversationId, 1);

@@ -1,5 +1,10 @@
 export class CryptoManager {
   private conversationKeys: Map<string, Map<number, CryptoKey>> = new Map();
+  // Extra keys (beyond the primary keyVersion slot) usable for trial-decryption.
+  // Needed for glare (both peers minted a key) and multi-device fan-out, where a
+  // conversation can legitimately have more than one key that decrypts its history.
+  // Keyed by raw-key fingerprint (base64) to dedupe across repeated loads.
+  private candidateKeys: Map<string, Map<string, CryptoKey>> = new Map();
 
   async encrypt(
     conversationId: string,
@@ -82,15 +87,121 @@ export class CryptoManager {
 
   clearConversationKey(conversationId: string, keyVersion: number): void {
     const versions = this.conversationKeys.get(conversationId);
-    if (!versions) return;
-    versions.delete(keyVersion);
-    if (versions.size === 0) {
-      this.conversationKeys.delete(conversationId);
+    if (versions) {
+      versions.delete(keyVersion);
+      if (versions.size === 0) {
+        this.conversationKeys.delete(conversationId);
+      }
     }
+    this.candidateKeys.delete(conversationId);
   }
 
   clearAllConversationKeys(): void {
     this.conversationKeys.clear();
+    this.candidateKeys.clear();
+  }
+
+  // --- Candidate keys & trial decryption (glare + multi-device) ---
+
+  async addCandidateKey(conversationId: string, key: CryptoKey): Promise<void> {
+    let fingerprint: string;
+    try {
+      fingerprint = await this.exportRawKey(key);
+    } catch {
+      // Non-extractable key (shouldn't happen here) — skip dedupe storage.
+      return;
+    }
+    let bucket = this.candidateKeys.get(conversationId);
+    if (!bucket) {
+      bucket = new Map();
+      this.candidateKeys.set(conversationId, bucket);
+    }
+    bucket.set(fingerprint, key);
+  }
+
+  getCandidateKeys(conversationId: string): CryptoKey[] {
+    const primary = this.conversationKeys.get(conversationId);
+    const primaryKeys = primary ? Array.from(primary.values()) : [];
+    const extras = this.candidateKeys.get(conversationId);
+    return extras ? [...primaryKeys, ...extras.values()] : primaryKeys;
+  }
+
+  // Try every known key (primary + candidates) until one decrypts. No GCM aad
+  // is bound at encrypt time, so trial decryption omits additionalData.
+  async tryDecryptWithCandidates(
+    conversationId: string,
+    ciphertext: string,
+    nonce: string,
+  ): Promise<string | null> {
+    const iv = this.base64ToBuffer(nonce) as BufferSource;
+    const data = this.base64ToBuffer(ciphertext) as BufferSource;
+    for (const key of this.getCandidateKeys(conversationId)) {
+      try {
+        const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data);
+        return new TextDecoder().decode(plaintext);
+      } catch {
+        // wrong key — try next
+      }
+    }
+    return null;
+  }
+
+  // --- Random conversation key + key wrapping (multi-device fan-out) ---
+
+  async generateConversationKey(): Promise<CryptoKey> {
+    return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
+      "encrypt",
+      "decrypt",
+    ]);
+  }
+
+  async exportRawKey(key: CryptoKey): Promise<string> {
+    const raw = await crypto.subtle.exportKey("raw", key);
+    return this.bufferToBase64(raw);
+  }
+
+  async importRawKey(rawBase64: string): Promise<CryptoKey> {
+    return crypto.subtle.importKey(
+      "raw",
+      this.base64ToBuffer(rawBase64) as BufferSource,
+      { name: "AES-GCM" },
+      true,
+      ["encrypt", "decrypt"],
+    );
+  }
+
+  // Wrap raw key bytes (base64) under an AES-GCM wrapping key derived via ECDH.
+  async wrapKey(
+    wrappingKey: CryptoKey,
+    rawKeyBase64: string,
+  ): Promise<{ nonce: string; ciphertext: string }> {
+    const nonce = crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: nonce },
+      wrappingKey,
+      this.base64ToBuffer(rawKeyBase64) as BufferSource,
+    );
+    return {
+      nonce: this.bufferToBase64(nonce),
+      ciphertext: this.bufferToBase64(ciphertext),
+    };
+  }
+
+  // Unwrap a wrapped conversation key. Throws if the wrapping key does not match.
+  async unwrapKey(
+    wrappingKey: CryptoKey,
+    nonce: string,
+    ciphertext: string,
+  ): Promise<CryptoKey> {
+    const rawBytes = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: this.base64ToBuffer(nonce) as BufferSource },
+      wrappingKey,
+      this.base64ToBuffer(ciphertext) as BufferSource,
+    );
+    return crypto.subtle.importKey("raw", rawBytes, { name: "AES-GCM" }, true, [
+      "encrypt",
+      "decrypt",
+    ]);
   }
 
   async generateEcdhKeyPair(): Promise<CryptoKeyPair> {

@@ -302,6 +302,23 @@ export class ApiClient {
       updatedAt: string;
     }>(`/users/${userId}/ecdh-public-key`);
   }
+
+  async getUserEcdhPublicKeys(
+    userId: UUID,
+  ): Promise<{ deviceId: UUID; publicKey: string; updatedAt: string }[]> {
+    try {
+      const res = await this.request<{
+        userId: UUID;
+        keys: { deviceId: UUID; publicKey: string; updatedAt: string }[];
+      }>(`/users/${userId}/ecdh-public-keys`);
+      return res.keys;
+    } catch (err) {
+      if (err instanceof ApiError && err.statusCode === 404) {
+        return [];
+      }
+      throw err;
+    }
+  }
 }
 
 export const apiClient = new ApiClient();
