@@ -8,6 +8,7 @@ import type {
   Conversation,
   UserSearchResult,
   CallLog,
+  E2eeSetupAad,
 } from "../types/index.js";
 
 const API_BASE_URL =
@@ -240,6 +241,17 @@ export class ApiClient {
       messages: Message[];
       nextCursor?: string;
     }>(`/conversations/${conversationId}/messages?${params.toString()}`);
+  }
+
+  async getConversationKeySetups(conversationId: UUID): Promise<E2eeSetupAad[]> {
+    try {
+      const res = await this.request<{ setups: E2eeSetupAad[] }>(
+        `/conversations/${conversationId}/key-setups`,
+      );
+      return res.setups ?? [];
+    } catch {
+      return [];
+    }
   }
 
   async getCalls(

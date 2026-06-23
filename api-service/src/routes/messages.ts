@@ -132,6 +132,29 @@ router.get("/conversations/:conversationId/messages", authRequired, async (req, 
   });
 });
 
+router.get("/conversations/:conversationId/key-setups", authRequired, async (req, res) => {
+  const { conversationId } = req.params;
+  if (!isUuid(conversationId)) {
+    return fail(res, 400, "VALIDATION_FAILED", "Invalid conversationId");
+  }
+
+  if (!(await isConversationMember(conversationId, req.auth!.userId))) {
+    return fail(res, 403, "PERMISSION_DENIED", "Conversation access denied");
+  }
+
+  const result = await pool.query<{ setup_aad: Record<string, unknown> }>(
+    `
+      SELECT setup_aad
+      FROM conversation_key_setups
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+    `,
+    [conversationId],
+  );
+
+  return ok(res, { setups: result.rows.map((row) => row.setup_aad) });
+});
+
 router.post("/messages/:messageId/delivered", authRequired, async (req, res) => {
   const { messageId } = req.params;
   const deliveredAt = req.body?.deliveredAt;

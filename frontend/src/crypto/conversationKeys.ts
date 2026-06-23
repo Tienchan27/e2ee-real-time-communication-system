@@ -196,6 +196,25 @@ export async function ensureKeyFromGliteHistory(
   );
 }
 
+// Khôi phục khóa từ các key-setup tải riêng (qua GET /conversations/:id/key-setups).
+// Nguồn này KHÔNG phụ thuộc cửa sổ phân trang tin nhắn, nên khóa luôn khôi phục được
+// dù hội thoại dài bao nhiêu. Additive/non-destructive như deriveKeyFromSetupAad.
+export async function ensureKeyFromKeySetups(
+  conversationId: UUID,
+  setups: E2eeSetupAad[],
+): Promise<boolean> {
+  if (setups.length === 0) return false;
+  // setups sắp xếp cũ -> mới: cái sớm nhất trở thành primary (canonical).
+  await loadConversationKey(conversationId, 1);
+  for (const setup of setups) {
+    await deriveKeyFromSetupAad(conversationId, setup);
+  }
+  return (
+    cryptoManager.hasConversationKey(conversationId) ||
+    cryptoManager.getCandidateKeys(conversationId).length > 0
+  );
+}
+
 export type EnsureKeyResult = {
   setupAad?: E2eeSetupAad;
 };
@@ -208,6 +227,15 @@ export async function ensureKeyForSend(
   await loadConversationKey(conversationId, 1);
   if (cryptoManager.hasConversationKey(conversationId)) {
     return {};
+  }
+
+  // Tái dùng khóa đã thiết lập (nếu có) thay vì đúc khóa mới → tránh phân mảnh khóa.
+  const existingSetups = await apiClient.getConversationKeySetups(conversationId);
+  if (existingSetups.length > 0) {
+    await ensureKeyFromKeySetups(conversationId, existingSetups);
+    if (cryptoManager.hasConversationKey(conversationId)) {
+      return {};
+    }
   }
 
   const selfUserId = requireActiveCryptoUserId();

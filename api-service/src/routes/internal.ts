@@ -6,6 +6,17 @@ import { isUuid } from "../validation.js";
 
 const router = Router();
 
+function isSetupAad(
+  aad: unknown,
+): aad is { e2eeSetup: string; senderEphemeralPublicKey: string } & Record<string, unknown> {
+  if (!aad || typeof aad !== "object") return false;
+  const obj = aad as Record<string, unknown>;
+  return (
+    (obj.e2eeSetup === "g-lite-v1" || obj.e2eeSetup === "g-lite-v2") &&
+    typeof obj.senderEphemeralPublicKey === "string"
+  );
+}
+
 router.post("/messages/persist", internalAuthRequired, async (req, res) => {
   const { requestId, messageId, conversationId, senderUserId, senderDeviceId, envelope } =
     req.body ?? {};
@@ -100,6 +111,22 @@ router.post("/messages/persist", internalAuthRequired, async (req, res) => {
     await client.query("UPDATE conversations SET updated_at = NOW() WHERE id = $1", [
       conversationId,
     ]);
+
+    // Lưu key-setup tách khỏi message để client luôn khôi phục được khóa (không bị
+    // giới hạn phân trang). Idempotent theo ephemeral public key.
+    if (isSetupAad(envelope.aad)) {
+      await client.query(
+        `
+          INSERT INTO conversation_key_setups (
+            conversation_id, sender_device_id, sender_ephemeral_public_key, setup_aad
+          )
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (conversation_id, sender_ephemeral_public_key) DO NOTHING
+        `,
+        [conversationId, senderDeviceId, envelope.aad.senderEphemeralPublicKey, envelope.aad],
+      );
+    }
+
     await client.query("COMMIT");
 
     return ok(res, {

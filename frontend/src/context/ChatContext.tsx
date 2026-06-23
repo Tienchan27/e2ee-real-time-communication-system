@@ -16,6 +16,7 @@ import {
   decryptMessage as decryptMessageWithKeys,
   ensureKeyForSend,
   ensureKeyFromGliteHistory,
+  ensureKeyFromKeySetups,
   conversationHasGliteSetup,
   hasConversationKey,
   isE2eeSetupAad,
@@ -602,16 +603,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           .joinConversation(conversationId)
           .catch((err) => console.warn("[Chat] joinConversation failed:", err));
 
-        const [messageResult, callResult] = await Promise.all([
+        const [messageResult, callResult, keySetups] = await Promise.all([
           apiClient.getMessages(conversationId, 50),
           apiClient.getCalls(conversationId, 50),
+          apiClient.getConversationKeySetups(conversationId),
         ]);
 
-        const hasGlite = conversationHasGliteSetup(messageResult.messages);
-        const gliteKeyOk = await ensureKeyFromGliteHistory(
-          conversationId,
-          messageResult.messages,
-        );
+        // Khôi phục khóa từ key-setups (nguồn đầy đủ, không phụ thuộc cửa sổ 50 tin)
+        // TRƯỚC, rồi mới bổ trợ bằng setup aad trong lịch sử tin.
+        const keySetupOk = await ensureKeyFromKeySetups(conversationId, keySetups);
+        const hasGlite = keySetups.length > 0 || conversationHasGliteSetup(messageResult.messages);
+        const gliteKeyOk =
+          (await ensureKeyFromGliteHistory(conversationId, messageResult.messages)) || keySetupOk;
 
         if (gliteKeyOk) {
           markGliteConversation(conversationId);
