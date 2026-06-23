@@ -115,9 +115,7 @@ Quy tắc bổ sung:
 - Security logs:
   - giữ tối thiểu 30 ngày.
 
-## Chống lạm dụng
 
-### Giới hạn tần suất (Rate Limiting)
 
 ### Mã hóa mật khẩu (Password Hashing)
 
@@ -138,11 +136,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Khi đăng ký, mật khẩu được băm trước khi lưu vào `otp_requests`.
 - Khi xác minh OTP thành công, hash được chuyển sang bảng `users`; không lưu mật khẩu plaintext.
 
-### Điều chế kết nối Socket
-
-### Chống spam trong chat
-
-## Xác thực đầu vào và Chống tiêm nhiễm
 
 ### Bảo vệ đầu vào không đúng định dạng
 
@@ -162,9 +155,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Query limit được kiểm tra phạm vi bằng `parseLimit()`.
 - Các đoạn SQL động hiện có như hướng sắp xếp/cursor comparator được chọn từ logic server, không lấy trực tiếp từ input.
 
-### Chống XSS (Frontend)
-
-### Bảo vệ CSRF
 
 ### Chống tiêm nhiễm Email
 
@@ -172,7 +162,6 @@ Mật khẩu và OTP được băm bằng `crypto.scryptSync()` trong `api-servi
 - Regex email hiện tại loại bỏ whitespace, bao gồm newline/tab.
 - OTP email được gửi bằng `nodemailer`; `from` lấy từ cấu hình SMTP, `subject` là hằng số, nội dung email chỉ chứa OTP do server sinh.
 
-### Chống tiêm nhiễm Header
 
 ### Chống tiêm nhiễm Command
 
