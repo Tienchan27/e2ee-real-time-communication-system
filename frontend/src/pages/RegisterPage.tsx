@@ -18,6 +18,7 @@ export function RegisterPage() {
 
   const [otpCode, setOtpCode] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const [registerLoading, setRegisterLoading] = useState(false);
 
   useEffect(() => {
     if (step !== "otp" || countdown <= 0) return;
@@ -27,6 +28,7 @@ export function RegisterPage() {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (registerLoading) return; // chặn double-submit -> tránh gửi nhiều OTP
     setError("");
 
     if (!email || !username || !password || !displayName) {
@@ -34,6 +36,7 @@ export function RegisterPage() {
       return;
     }
 
+    setRegisterLoading(true);
     try {
       const response = await register(email, username, password, displayName);
       setOtpRequestId(response.otpRequestId);
@@ -42,6 +45,8 @@ export function RegisterPage() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Đăng ký thất bại";
       setError(errorMsg);
+    } finally {
+      setRegisterLoading(false);
     }
   };
 
@@ -143,7 +148,7 @@ export function RegisterPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="email@example.com"
-              disabled={isLoading}
+              disabled={isLoading || registerLoading}
             />
           </div>
           <div className="form-group">
@@ -154,7 +159,7 @@ export function RegisterPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="username"
-              disabled={isLoading}
+              disabled={isLoading || registerLoading}
             />
           </div>
           <div className="form-group">
@@ -165,7 +170,7 @@ export function RegisterPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Tên của bạn"
-              disabled={isLoading}
+              disabled={isLoading || registerLoading}
             />
           </div>
           <div className="form-group">
@@ -176,14 +181,14 @@ export function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              disabled={isLoading}
+              disabled={isLoading || registerLoading}
             />
           </div>
           {(error || authError) && (
             <div className="error-message">{error || authError}</div>
           )}
-          <button type="submit" className="auth-submit" disabled={isLoading}>
-            {isLoading ? "Đang đăng ký..." : "Đăng ký"}
+          <button type="submit" className="auth-submit" disabled={isLoading || registerLoading}>
+            {registerLoading ? "Đang gửi mã..." : isLoading ? "Đang đăng ký..." : "Đăng ký"}
           </button>
         </form>
         <p className="auth-footer">

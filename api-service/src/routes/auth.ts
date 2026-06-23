@@ -95,13 +95,11 @@ router.post("/register/request-otp", async (req, res) => {
     );
     const otpRequestId = result.rows[0].id;
 
-    try {
-      await sendRegistrationOtp(email, otpCode);
-    } catch (error) {
-      await pool.query("DELETE FROM otp_requests WHERE id = $1", [otpRequestId]);
+    // Gui email o nen (fire-and-forget): response tra ve ngay -> man hinh nhap OTP
+    // chuyen tuc thi, khong phai cho SMTP. Loi gui mail chi log phia server.
+    void sendRegistrationOtp(email, otpCode).catch((error) => {
       console.error("Could not send registration OTP email", error);
-      return fail(res, 503, "INTERNAL_ERROR", "Could not send OTP email", requestId);
-    }
+    });
 
     const data: Record<string, unknown> = {
       otpRequestId,
