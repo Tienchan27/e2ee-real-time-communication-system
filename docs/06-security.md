@@ -228,6 +228,25 @@ Lý do chọn scrypt thay bcrypt:
   - Xác thực token CSRF (nếu không sử dụng cookie SameSite hiện đại).
 - Endpoint API không phục vụ biểu mẫu HTML; rủi ro CSRF tối thiểu.
 
+### Chống tiêm nhiễm Email
+
+- Xác thực email local-part: chỉ alphanumeric, dấu chấm, gạch ngang (tập con RFC 5321).
+- Độ dài email tối đa: 254 ký tự.
+- Từ chối email với ký tự newline/tab.
+- SMTP header (To, From, Cc) không chứa đầu vào của người dùng trực tiếp.
+
+### Chống tiêm nhiễm Header
+
+- Từ chối các giá trị header HTTP chứa ký tự newline (`\n`, `\r`).
+- Danh sách trắng các khóa header được phép từ client.
+- Ghi lại bất kỳ nỗ lực tiêm nhiễm nào.
+
+### Chống tiêm nhiễm Command
+
+- Không sử dụng `child_process.exec()` hay shell commands.
+- Nếu cần chạy quy trình bên ngoài, hãy sử dụng `child_process.execFile()` + mảng đối số.
+- Không truyền đầu vào của người dùng làm đối số lệnh trực tiếp.
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
