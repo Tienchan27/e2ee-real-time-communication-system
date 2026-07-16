@@ -187,6 +187,22 @@ Lý do chọn scrypt thay bcrypt:
 - Spam lỗi chính tả: kiểm tra các ký tự lặp lại (>10 lần lặp).
 - Xác thực tin nhắn dài: tối đa 10,000 ký tự mỗi tin nhắn.
 
+## Xác thực đầu vào và Chống tiêm nhiễm
+
+### Bảo vệ đầu vào không đúng định dạng
+
+**Phân tích JSON:**
+- Xác thực schema JSON nghiêm ngặt cho tất cả body yêu cầu.
+- Kích thước yêu cầu tối đa: 1 MB (có thể cấu hình qua `MAX_BODY_SIZE`).
+- Từ chối các chuỗi UTF-8 không hợp lệ.
+- Timeout: 30 giây mỗi yêu cầu.
+
+**Middleware Bảo vệ Đầu vào:**
+- Danh sách trắng các trường được phép cho mỗi endpoint.
+- Không cho phép ép kiểu dữ liệu.
+- Từ chối byte null, ký tự điều khiển.
+- Làm sạch các trường chuỗi (cắt, xóa khoảng trắng đầu/cuối).
+
 ## Mô hình đe dọa mức cơ bản
 
 - Đã bao phủ:
